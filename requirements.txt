@@ -1,0 +1,4 @@
+# Runtime dependencies. Everything else comes from the Python standard
+# library (sqlite3, hashlib.scrypt, csv).
+fastapi==0.162.6
+uvicorn==0.54.0

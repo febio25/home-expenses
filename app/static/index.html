@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <!-- interactive-widget=resizes-content keeps the Save button above the keyboard on Android -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#0B6E4F">
+  <meta name="color-scheme" content="light">
+  <title>Spese di Casa</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <div id="app" class="app">
+    <main id="view" class="view" tabindex="-1">
+      <p class="boot">Caricamento…</p>
+    </main>
+    <nav id="nav" class="nav" aria-label="Sezioni" hidden></nav>
+  </div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <noscript><p class="boot">Per usare Spese di Casa serve JavaScript attivo.</p></noscript>
+</body>
+</html>

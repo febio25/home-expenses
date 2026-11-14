@@ -1,0 +1,100 @@
+# Publishes the Docker image to GitHub Container Registry (GHCR).
+#
+# Trigger: push a tag named like the app version, e.g.
+#   git tag v0.3.1 && git push origin v0.3.1
+#
+# Result: ghcr.io/<owner>/<repo>:<version>, for linux/amd64 and linux/arm64.
+# The job summary prints the exact "image:" line to paste into the
+# Umbrel store's docker-compose.yml (tag + multi-arch digest).
+
+name: Release image
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check that the tag matches the app version
+        id: meta
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          app_version="$(python3 -c 'import re,pathlib; print(re.search(r"__version__ = \"(.+?)\"", pathlib.Path("app/__init__.py").read_text()).group(1))')"
+          if [ "$tag_version" != "$app_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match __version__ $app_version in app/__init__.py"
+            exit 1
+          fi
+          # GHCR requires lowercase names.
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          repo="${repo,,}"
+          echo "version=$app_version" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$owner/$repo" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push (amd64 + arm64)
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          # Links the package to this repository on GitHub.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          # No attestation manifests: the index lists only the two real
+          # platforms, which keeps it simple for umbrelOS and its linter.
+          provenance: false
+          sbom: false
+
+      - name: Show platforms and the line for the Umbrel store
+        run: |
+          ref="${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}"
+          docker buildx imagetools inspect "$ref"
+          line="image: $ref@${{ steps.build.outputs.digest }}"
+          {
+            echo "## Immagine pubblicata"
+            echo
+            echo "Riga da copiare in \`docker-compose.yml\` dello store Umbrel (servizio \`web\`):"
+            echo
+            echo '```yaml'
+            echo "    $line"
+            echo '```'
+            echo
+            echo "Ricorda di aggiornare anche \`version:\` in \`umbrel-app.yml\` a \"${{ steps.meta.outputs.version }}\"."
+          } >> "$GITHUB_STEP_SUMMARY"
