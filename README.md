@@ -31,12 +31,12 @@ Il progetto vive in due repository pubblici su GitHub:
 
 | Repository | Contenuto |
 |---|---|
-| `tallynest/home-expenses` (questo) | Codice, test, `Dockerfile`, workflow che pubblica l'immagine |
-| `tallynest/umbrel-app-store` | Community App Store per Umbrel: scheda dell'app e `docker-compose.yml` |
+| `febio25/home-expenses` (questo) | Codice, test, `Dockerfile`, workflow che pubblica l'immagine |
+| `febio25/umbrel-app-store` | Community App Store per Umbrel: scheda dell'app e `docker-compose.yml` |
 
 L'immagine Docker viene costruita da GitHub Actions per `amd64` e `arm64` e
 pubblicata su GitHub Container Registry come
-`ghcr.io/tallynest/home-expenses:<versione>`. Umbrel non costruisce nulla:
+`ghcr.io/febio25/home-expenses:<versione>`. Umbrel non costruisce nulla:
 scarica l'immagine indicata nello store, fissata con il suo digest.
 
 | Identificativo | Valore |
@@ -46,20 +46,8 @@ scarica l'immagine indicata nello store, fissata con il suo digest.
 | Porta dell'app su Umbrel | `8395` |
 | Porta HTTPS su Tailscale | `8443` |
 
-> **Se al momento della registrazione il nome `tallynest` risulta preso**,
-> scegline un altro e sostituiscilo in tutti i file dei due repository prima
-> del primo commit. Dal Terminale del Mac, nella cartella che contiene
-> `home-expenses` e `umbrel-app-store`:
->
-> ```bash
-> grep -rl tallynest home-expenses umbrel-app-store | xargs sed -i '' 's/tallynest/NUOVO-NOME/g'
-> ```
->
-> Il comando cambia anche l'ID dello store e dell'app, che devono iniziare
-> con lo stesso prefisso; poi rinomina a mano la cartella
-> `umbrel-app-store/tallynest-expenses`.
->
-> Usa solo lettere minuscole, cifre e trattini: GHCR non accetta maiuscole.
+> L'account GitHub è `febio25`. `tallynest` è solo il prefisso dello store
+> e dell'app su Umbrel: i due nomi sono indipendenti.
 
 ## Installazione su Umbrel
 
@@ -68,7 +56,7 @@ scarica l'immagine indicata nello store, fissata con il suo digest.
 Serve un account GitHub (gratuito) e la GitHub CLI sul Mac. Con Homebrew:
 `brew install gh`. In alternativa puoi usare GitHub Desktop.
 
-1. Crea l'account `tallynest` su <https://github.com/signup>.
+1. Crea l'account su <https://github.com/signup> (fatto: `febio25`, accesso con Google).
 2. Collega la CLI all'account: `gh auth login` (scegli GitHub.com, HTTPS,
    accesso dal browser).
 3. Dalla cartella `home-expenses` crea il repository e carica il codice:
@@ -94,7 +82,7 @@ Serve un account GitHub (gratuito) e la GitHub CLI sul Mac. Con Homebrew:
    Alla fine il riepilogo mostra la riga da copiare, simile a:
 
    ```yaml
-       image: ghcr.io/tallynest/home-expenses:0.3.1@sha256:4f3c…
+       image: ghcr.io/febio25/home-expenses:0.3.1@sha256:4f3c…
    ```
 
 6. Controlla che l'immagine sia pubblica: dal tuo profilo GitHub apri
@@ -104,7 +92,7 @@ Serve un account GitHub (gratuito) e la GitHub CLI sul Mac. Con Homebrew:
 
    ```bash
    docker logout ghcr.io
-   docker pull ghcr.io/tallynest/home-expenses:0.3.1
+   docker pull ghcr.io/febio25/home-expenses:0.3.1
    ```
 
 ### 2. Pubblica lo store
@@ -132,7 +120,7 @@ La struttura è quella del template ufficiale
 
 1. Su Umbrel apri l'**App Store** dal dock.
 2. Menu **⋯** in alto a destra → **Community App Stores**.
-3. Incolla `https://github.com/tallynest/umbrel-app-store` e premi
+3. Incolla `https://github.com/febio25/umbrel-app-store` e premi
    **Add**, poi **Open** accanto a «Tallynest».
 4. Installa **Spese di Casa**.
 
@@ -386,7 +374,7 @@ anche ora che si chiama `home-expenses`.
 
 *Stacks → Add stack → Web editor*: incolla il contenuto di
 `docker-compose.yml`, togli le righe `build: .` e `image: spese-di-casa:local`
-e togli il commento dalla riga `image: ghcr.io/tallynest/home-expenses:…`.
+e togli il commento dalla riga `image: ghcr.io/febio25/home-expenses:…`.
 Così Portainer usa l'immagine pubblicata e non deve costruire nulla.
 
 In alternativa, *Stacks → Add stack → Repository* con l'URL di questo
