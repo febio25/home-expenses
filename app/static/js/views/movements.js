@@ -8,6 +8,12 @@ import {
 
 const MONTH_SHAPE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+// The month asked for in the address (?mese=2026-10), or the current one.
+export function monthFromQuery(query) {
+  const requested = query.get('mese');
+  return requested && MONTH_SHAPE.test(requested) ? requested : currentMonth();
+}
+
 // Shared with the summary screen: "‹  novembre 2026  ›"
 export function monthSwitcher(month, onChange) {
   const isCurrent = month >= currentMonth();
@@ -23,10 +29,12 @@ export function monthSwitcher(month, onChange) {
     }, icon('right')));
 }
 
-function expenseRow(expense) {
-  const title = expense.merchant_name || expense.category_name;
+// showCategory: false in the list of a single category, where it would
+// repeat the same name on every row.
+function expenseRow(expense, { showCategory = true } = {}) {
+  const title = expense.merchant_name || (showCategory ? expense.category_name : 'Senza esercente');
   const meta = [
-    expense.merchant_name ? expense.category_name : null,
+    showCategory && expense.merchant_name ? expense.category_name : null,
     expense.paid_by_name,
     PAYMENT_LABELS[expense.payment_method].toLowerCase(),
   ].filter(Boolean).join(', ');
@@ -38,9 +46,31 @@ function expenseRow(expense) {
     h('span', { class: 'row-amount' }, formatEuro(expense.amount_cents)));
 }
 
+// Total of the list, then one section per day (newest first) with its total.
+// Shared with the summary of a single category.
+export function expenseList(expenses, rowOptions) {
+  const total = expenses.reduce((sum, expense) => sum + expense.amount_cents, 0);
+  const groups = new Map(); // date -> expenses, insertion order = newest day first
+  for (const expense of expenses) {
+    if (!groups.has(expense.expense_date)) groups.set(expense.expense_date, []);
+    groups.get(expense.expense_date).push(expense);
+  }
+  return [
+    h('p', { class: 'month-total' },
+      h('span', { class: 'month-total-amount' }, formatEuro(total)),
+      h('span', { class: 'month-total-count' },
+        expenses.length === 1 ? '1 spesa' : `${expenses.length} spese`)),
+    ...Array.from(groups, ([date, items]) => h('section', { class: 'day' },
+      h('h2', { class: 'day-head' },
+        h('span', {}, dayLabel(date)),
+        h('span', { class: 'day-total' },
+          formatEuro(items.reduce((sum, expense) => sum + expense.amount_cents, 0)))),
+      h('div', { class: 'card rows' }, items.map((expense) => expenseRow(expense, rowOptions))))),
+  ];
+}
+
 export async function mount(root, ctx) {
-  const requested = ctx.query.get('mese');
-  let month = requested && MONTH_SHAPE.test(requested) ? requested : currentMonth();
+  let month = monthFromQuery(ctx.query);
   const head = h('header', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Movimenti'));
   const switcherSlot = h('div');
   const body = h('div');
@@ -50,7 +80,7 @@ export async function mount(root, ctx) {
   // screen until the new data arrives, and keeping it if the refresh fails.
   async function show(nextMonth, { quiet = false } = {}) {
     month = nextMonth;
-    history.replaceState(null, '', month === currentMonth() ? '/movimenti' : `/movimenti?mese=${month}`);
+    history.replaceState(history.state, '', month === currentMonth() ? '/movimenti' : `/movimenti?mese=${month}`);
     switcherSlot.replaceChildren(monthSwitcher(month, show));
     if (!quiet) body.replaceChildren(loadingBlock());
     let expenses;
@@ -71,24 +101,7 @@ export async function mount(root, ctx) {
       return;
     }
 
-    const total = expenses.reduce((sum, expense) => sum + expense.amount_cents, 0);
-    const groups = new Map(); // date -> expenses, insertion order = newest day first
-    for (const expense of expenses) {
-      if (!groups.has(expense.expense_date)) groups.set(expense.expense_date, []);
-      groups.get(expense.expense_date).push(expense);
-    }
-
-    body.replaceChildren(
-      h('p', { class: 'month-total' },
-        h('span', { class: 'month-total-amount' }, formatEuro(total)),
-        h('span', { class: 'month-total-count' },
-          expenses.length === 1 ? '1 spesa' : `${expenses.length} spese`)),
-      ...Array.from(groups, ([date, items]) => h('section', { class: 'day' },
-        h('h2', { class: 'day-head' },
-          h('span', {}, dayLabel(date)),
-          h('span', { class: 'day-total' },
-            formatEuro(items.reduce((sum, expense) => sum + expense.amount_cents, 0)))),
-        h('div', { class: 'card rows' }, items.map(expenseRow)))));
+    body.replaceChildren(...expenseList(expenses));
   }
 
   ctx.onResume(({ longAway }) => { if (longAway) show(month, { quiet: true }); });

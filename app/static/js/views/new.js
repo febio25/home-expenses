@@ -4,7 +4,9 @@
 import { api } from '../api.js';
 import { state, loadUsers, loadCategories, loadMerchants, local } from '../store.js';
 import { createExpenseForm } from '../expense-form.js';
-import { h, toast, vibrate, formatEuro, loadingBlock, errorBlock, newUuid, todayIso } from '../ui.js';
+import {
+  h, toast, dismissToasts, vibrate, formatEuro, loadingBlock, errorBlock, newUuid, todayIso,
+} from '../ui.js';
 
 const DRAFT_KEY = 'draft';
 const DRAFT_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -53,6 +55,10 @@ export async function mount(root, ctx) {
       hideError();
     },
   });
+  // Starting the next expense (a tap or a keystroke anywhere in the form)
+  // closes the confirmation of the previous one: nothing to wait for.
+  form.element.addEventListener('pointerdown', dismissToasts, { capture: true });
+  form.element.addEventListener('input', dismissToasts, { capture: true });
 
   const errorBanner = h('div', { class: 'banner banner-error', role: 'alert', hidden: true });
   function showError(title, text) {
@@ -65,6 +71,7 @@ export async function mount(root, ctx) {
     class: 'btn btn-primary btn-block btn-save', type: 'button',
     // Keep the keyboard open while tapping Save: if the field lost focus the
     // keyboard would close and the button would move away under the thumb.
+    // It is closed on purpose once the expense is saved (see save()).
     onpointerdown: (event) => event.preventDefault(),
     onclick: save,
   }, 'Salva spesa');
@@ -83,13 +90,17 @@ export async function mount(root, ctx) {
       draft = { uuid: newUuid(), values: {} };
       form.reset(); // back to the defaults: today, me, card
       flashSaved();
+      // Close the keyboard: the whole empty form is in view again, and the
+      // confirmation (with "Annulla") appears above the Save button, in reach
+      // of the thumb, instead of over the amount. A tap on the amount starts
+      // the next expense and closes the confirmation.
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       // Back to the top: the next expense starts from the amount, in view.
       document.getElementById('view').scrollTop = 0;
       toast(`Salvata: ${formatEuro(expense.amount_cents)}${expense.merchant_name ? ` da ${expense.merchant_name}` : ''}`, {
         kind: 'success',
         action: { label: 'Annulla', run: () => undo(expense) },
       });
-      form.focusAmount();
       // Refresh the autocomplete in the background (new merchant, new counts).
       loadMerchants({ force: true }).then((list) => form.setMerchants(list)).catch(() => {});
     } catch (error) {

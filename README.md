@@ -14,6 +14,7 @@ esposta su internet.
   (oggi, chi è collegato, carta) e si cambiano con un tocco.
 - Lista dei movimenti per mese, con modifica ed eliminazione.
 - Riepilogo mensile: totale, grafico a ciambella e totale per categoria.
+  Toccando una categoria si vedono le spese che la compongono.
 - Spese ricorrenti (abbonamenti, bollette): alla scadenza compaiono come «da
   registrare» e si confermano con un tocco, cambiando l'importo se serve.
   Nulla viene registrato in automatico.
@@ -275,14 +276,35 @@ ricarica la pagina una volta e riprova.
 
 ### Su Umbrel
 
-1. Nel repository `home-expenses` aggiorna `__version__` in
-   `app/__init__.py` (es. `0.3.1`), fai commit e push.
-2. Crea e invia il tag: `git tag v0.3.1 && git push origin v0.3.1`.
-3. Copia la riga `image:` dal riepilogo dell'esecuzione in **Actions**.
-4. Nel repository `umbrel-app-store`: incolla la riga in
-   `tallynest-expenses/docker-compose.yml`, aggiorna `version:` in
-   `tallynest-expenses/umbrel-app.yml`, fai commit e push.
-5. Su Umbrel l'aggiornamento compare nell'App Store; installalo da lì.
+Esempio con la versione `0.4.0`.
+
+1. Nel repository `home-expenses` la versione in `app/__init__.py`
+   (`__version__`) deve essere quella nuova. Fai commit e push.
+2. Crea e invia il tag:
+
+   ```bash
+   git tag v0.4.0 && git push origin v0.4.0
+   ```
+
+3. In **Actions** apri l'esecuzione «Release image» e, alla fine, copia la
+   riga `image: …@sha256:…` dal riepilogo.
+4. Nel repository `umbrel-app-store` sostituisci la riga con un comando
+   (incollandola a mano con TextEdit si può perdere l'andata a capo). Incolla
+   la riga copiata tra gli apici di `LINE`:
+
+   ```bash
+   cd umbrel-app-store
+   LINE='image: ghcr.io/febio25/home-expenses:0.4.0@sha256:INCOLLA_QUI'
+   sed -i '' "s|^    image: ghcr.io/febio25/home-expenses:.*|    ${LINE}|" tallynest-expenses/docker-compose.yml
+   grep -n -A1 "image:" tallynest-expenses/docker-compose.yml
+   ```
+
+   L'ultimo comando deve mostrare la riga nuova seguita da
+   `user: "1000:1000"` sulla riga successiva. (`sed -i ''` è la forma del
+   Mac; su Linux si scrive `sed -i`.)
+5. In `tallynest-expenses/umbrel-app.yml` aggiorna `version:` e
+   `releaseNotes:`, poi commit e push.
+6. Su Umbrel l'aggiornamento compare nell'App Store; installalo da lì.
 
 Il database è in `${APP_DATA_DIR}/data` e non viene toccato. All'avvio l'app
 applica da sola le eventuali modifiche allo schema. Le app installate sui
@@ -431,6 +453,9 @@ CDN.
   interi in centesimi (`amount_cents`).
 - `POST /api/v1/expenses` accetta un `client_uuid`: ripetere la richiesta con lo
   stesso valore non crea doppioni.
+- `GET /api/v1/expenses` filtra per `month=AAAA-MM` (oppure `from` e `to`) e
+  per `category_id`: per esempio `?month=2026-11&category_id=3` restituisce
+  le spese che compongono quel totale del riepilogo.
 - Spese ricorrenti: `GET/POST /api/v1/recurring`, `PATCH/DELETE
   /api/v1/recurring/{id}`, `POST /api/v1/recurring/{id}/register` (crea la spesa
   e sposta la scadenza) e `POST /api/v1/recurring/{id}/skip`. Entrambe chiedono

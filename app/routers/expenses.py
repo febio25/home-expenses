@@ -73,12 +73,20 @@ def list_expenses(
     month: str | None = Query(None, description="YYYY-MM; wins over from/to"),
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
+    category_id: int | None = Query(None, description="Only expenses of this category"),
     user: sqlite3.Row = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Expenses in the range, newest first. Without parameters: all of them."""
+    """Expenses in the range, newest first. Without parameters: all of them.
+
+    With ``category_id``, only that category (used by the summary to show
+    what makes up a category total). An unknown id gives an empty list.
+    """
     start, end = resolve_range(month, date_from, date_to)
     where, params = range_filter(start, end)
+    if category_id is not None:
+        where = f"{where} AND e.category_id = ?" if where else " WHERE e.category_id = ?"
+        params.append(category_id)
     rows = db.execute(
         f"{EXPENSE_SELECT}{where} ORDER BY e.expense_date DESC, e.id DESC", params
     ).fetchall()

@@ -250,7 +250,7 @@ select.input { appearance: auto; }
 .month-step:disabled { opacity: 0.35; }
 .month-name { font-weight: 700; font-size: 1.0625rem; text-transform: capitalize; }
 
-.month-total { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 0 4px; }
+.month-total { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 4px 0 4px; }
 .month-total-amount { font-size: 1.75rem; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .month-total-count { color: var(--muted); font-size: 0.875rem; }
 
@@ -274,11 +274,15 @@ select.input { appearance: auto; }
 .row-note { font-style: italic; }
 .row-amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-.bars { padding: 4px 14px; }
-.bar { display: block; padding: 12px 0; }
-.bar + .bar { border-top: 1px solid var(--line); }
-.bar-head { display: flex; justify-content: space-between; gap: 12px; font-weight: 650; }
+.bars { overflow: hidden; }
+.bars > li + li { border-top: 1px solid var(--line); }
+/* each category is a link to its expenses */
+.bar { display: block; padding: 12px 14px; color: inherit; text-decoration: none; }
+.bar:active { background: var(--primary-soft); }
+.bar-head { display: flex; align-items: baseline; gap: 12px; font-weight: 650; }
+.bar-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .bar-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar-go { flex: none; color: var(--primary); font-size: 1.25rem; line-height: 1; font-weight: 700; }
 .bar-track { display: block; height: 8px; margin: 8px 0 6px; background: var(--paper); border-radius: 4px; overflow: hidden; }
 .bar-fill { display: block; height: 100%; background: var(--primary); border-radius: 4px; }
 .bar-meta { display: block; color: var(--muted); font-size: 0.8125rem; }
@@ -371,17 +375,20 @@ select.input { appearance: auto; }
 
 /* --- toasts and dialogs ----------------------------------------------------- */
 
+/* At the bottom, in reach of the thumb. ui.js (placeToasts) lifts the host
+   above the Save bar or the navigation; this is only the starting point. */
 .toasts {
-  position: fixed; left: 0; right: 0; top: calc(10px + env(safe-area-inset-top)); z-index: 20;
+  position: fixed; left: 0; right: 0; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20;
   display: flex; justify-content: center; padding: 0 12px; pointer-events: none;
 }
+/* full width, so "Annulla" is always in the same spot on the right */
 .toast {
   display: flex; align-items: center; gap: 12px; pointer-events: auto;
-  max-width: var(--content); padding: 10px 10px 10px 16px;
+  width: 100%; max-width: var(--content); padding: 10px 10px 10px 16px;
   background: var(--ink); color: #fff; border-radius: var(--radius);
   box-shadow: 0 6px 20px rgb(20 37 31 / 0.25);
 }
-.toast-text { padding: 4px 6px 4px 0; }
+.toast-text { flex: 1; min-width: 0; padding: 4px 6px 4px 0; }
 .toast-success { background: var(--mark); color: var(--ink); font-weight: 650; }
 .toast-error { background: var(--danger); }
 .toast-action {

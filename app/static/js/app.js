@@ -2,13 +2,14 @@
 
 import { api } from './api.js';
 import { state, loadMe, clearState, invalidateLists } from './store.js';
-import { h, icon, errorBlock } from './ui.js';
+import { h, icon, errorBlock, placeToasts } from './ui.js';
 import * as loginView from './views/login.js';
 import * as setupView from './views/setup.js';
 import * as newView from './views/new.js';
 import * as editView from './views/edit.js';
 import * as movementsView from './views/movements.js';
 import * as summaryView from './views/summary.js';
+import * as summaryCategoryView from './views/summary-category.js';
 import * as settingsView from './views/settings.js';
 import * as recurringView from './views/recurring.js';
 import * as recurringFormView from './views/recurring-form.js';
@@ -18,6 +19,7 @@ const ROUTES = [
   { pattern: /^\/movimenti$/, view: movementsView, tab: 'movements' },
   { pattern: /^\/spesa\/(\d+)$/, view: editView, tab: 'movements' },
   { pattern: /^\/riepilogo$/, view: summaryView, tab: 'summary' },
+  { pattern: /^\/riepilogo\/categoria\/(\d+)$/, view: summaryCategoryView, tab: 'summary' },
   { pattern: /^\/impostazioni$/, view: settingsView, tab: 'settings' },
   { pattern: /^\/ricorrenti$/, view: recurringView, tab: 'settings' },
   { pattern: /^\/ricorrenti\/(nuova|\d+)(?:\/(registra))?$/, view: recurringFormView, tab: 'settings' },
@@ -39,10 +41,21 @@ let renderToken = 0;
 // Set by the current view through ctx.onResume(fn); see "back to the app".
 let resumeHandler = null;
 
+// Entries pushed from inside the app are marked, so a screen can tell
+// whether "back" leads to another screen of the app (see goBack).
 export function navigate(path, { replace = false } = {}) {
-  if (replace) history.replaceState(null, '', path);
-  else history.pushState(null, '', path);
+  if (replace) history.replaceState(history.state, '', path);
+  else history.pushState({ inApp: true }, '', path);
   return render();
+}
+
+// Back to the screen the user came from (the summary of a category, the
+// month list...), like Android's back button. When the screen was opened
+// directly (app shortcut, address bar) there is nothing behind it in the
+// app: go to `fallback` instead.
+function goBack(fallback) {
+  if (history.state && history.state.inApp) history.back();
+  else navigate(fallback, { replace: true });
 }
 
 function renderNav(activeTab) {
@@ -82,9 +95,12 @@ async function render() {
     navigate,
     isCurrent: () => token === renderToken,
     onResume: (handler) => { if (token === renderToken) resumeHandler = handler; },
+    back: (fallback) => { if (token === renderToken) goBack(fallback); },
   });
-  if (token === renderToken) cleanup = typeof result === 'function' ? result : null;
-  else if (typeof result === 'function') result();
+  if (token === renderToken) {
+    cleanup = typeof result === 'function' ? result : null;
+    placeToasts(); // a toast shown before navigating moves above the new screen's bars
+  } else if (typeof result === 'function') result();
   return undefined;
 }
 
@@ -161,6 +177,7 @@ function trackKeyboard() {
   }
   fullHeight = Math.max(fullHeight, window.innerHeight);
   document.body.classList.toggle('is-typing', fullHeight - window.innerHeight > KEYBOARD_MIN_HEIGHT);
+  placeToasts(); // keep a visible toast just above the bottom bars
 }
 window.addEventListener('resize', trackKeyboard);
 

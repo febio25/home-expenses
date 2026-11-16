@@ -115,21 +115,51 @@ export const PAYMENT_LABELS = { card: 'Carta', cash: 'Contanti', other: 'Altro' 
 
 // --- toasts ---------------------------------------------------------------
 
+// Toasts sit at the bottom, where the thumb is, just above whatever is pinned
+// there: the Save bar of the entry and edit screens, otherwise the bottom
+// navigation, otherwise the edge of the screen. Called again whenever that
+// can change (keyboard opening or closing, another screen).
+export function placeToasts() {
+  const host = document.getElementById('toasts');
+  if (!host || !host.firstChild) return;
+  const visible = (node) => Boolean(node && node.getClientRects().length);
+  const footer = document.querySelector('#view .footer-bar');
+  const nav = document.getElementById('nav');
+  const anchor = visible(footer) ? footer : visible(nav) ? nav : null;
+  if (anchor) {
+    const gap = window.innerHeight - anchor.getBoundingClientRect().top;
+    host.style.bottom = `${Math.max(0, Math.round(gap)) + 8}px`;
+  } else {
+    host.style.bottom = 'calc(12px + env(safe-area-inset-bottom))';
+  }
+}
+
 // toast('Spesa salvata', { action: { label: 'Annulla', run: fn }, kind: 'error' })
+// Tapping the message closes it at once: a toast never has to be waited out.
+// Returns a function that closes this toast.
 export function toast(message, { action = null, kind = 'info', duration = 5000 } = {}) {
   const host = document.getElementById('toasts');
   const element = h('div', { class: `toast toast-${kind}`, role: kind === 'error' ? 'alert' : 'status' },
     h('span', { class: 'toast-text' }, message));
   const close = () => element.remove();
+  element.addEventListener('click', close);
   if (action) {
     element.append(h('button', {
       class: 'toast-action',
       type: 'button',
-      onclick: () => { close(); action.run(); },
+      onclick: (event) => { event.stopPropagation(); close(); action.run(); },
     }, action.label));
   }
   host.replaceChildren(element); // one toast at a time: the newest wins
+  placeToasts();
   setTimeout(close, action ? Math.max(duration, 7000) : duration);
+  return close;
+}
+
+// Close the visible toast, unless it reports an error. Used when the user
+// starts the next action: the confirmation of the previous one has done its job.
+export function dismissToasts() {
+  document.querySelectorAll('#toasts .toast:not(.toast-error)').forEach((node) => node.remove());
 }
 
 export function vibrate(pattern = 35) {

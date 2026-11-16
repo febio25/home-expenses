@@ -23,7 +23,7 @@ export async function mount(root, ctx) {
     if (!ctx.isCurrent()) return;
     if (error.status === 404) {
       toast('Questa spesa non esiste più.', { kind: 'error' });
-      ctx.navigate('/movimenti', { replace: true });
+      ctx.back('/movimenti');
     } else {
       root.replaceChildren(errorBlock(error, () => ctx.navigate(location.pathname, { replace: true })));
     }
@@ -31,9 +31,10 @@ export async function mount(root, ctx) {
   }
   if (!ctx.isCurrent()) return;
 
-  // Return to the month the expense was listed under.
+  // Back to the list the expense was opened from (Movimenti, or the summary
+  // of its category). Opened directly: the month it is listed under.
   const backPath = `/movimenti?mese=${expense.expense_date.slice(0, 7)}`;
-  const goBack = () => ctx.navigate(backPath, { replace: true });
+  const goBack = () => ctx.back(backPath);
   // created_at is UTC: show it as a local date.
   const createdOn = new Date(expense.created_at).toLocaleDateString('it-IT', {
     day: 'numeric', month: 'long', year: 'numeric',
@@ -110,7 +111,10 @@ export async function mount(root, ctx) {
   root.replaceChildren(
     h('header', { class: 'page-head' },
       h('h1', { class: 'page-title' }, 'Modifica spesa'),
-      h('a', { class: 'page-link', href: backPath, dataset: { link: '' } }, 'Annulla')),
+      h('a', {
+        class: 'page-link', href: backPath,
+        onclick: (event) => { event.preventDefault(); goBack(); },
+      }, 'Annulla')),
     h('p', { class: 'page-meta' },
       `Inserita da ${expense.created_by_name} il ${createdOn}`),
     form.element,

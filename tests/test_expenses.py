@@ -91,6 +91,32 @@ def test_list_by_month_and_range(client, categories):
     assert client.get(f"{API}/expenses?from=2026-12-01&to=2026-11-01").status_code == 422
 
 
+def test_list_by_category(client, categories):
+    food, gifts = categories["Spesa alimentare"], categories["Regali"]
+    make_expense(client, categories, category_id=food, expense_date="2026-10-31", amount="1")
+    make_expense(client, categories, category_id=food, expense_date="2026-11-02", amount="2")
+    make_expense(client, categories, category_id=food, expense_date="2026-11-20", amount="3")
+    make_expense(client, categories, category_id=gifts, expense_date="2026-11-10", amount="4")
+
+    # Combined with the month: what makes up a category total in the summary.
+    november_food = client.get(f"{API}/expenses?month=2026-11&category_id={food}").json()
+    assert [e["amount_cents"] for e in november_food] == [300, 200]  # newest first
+    summary = client.get(f"{API}/summary?month=2026-11").json()
+    food_total = next(c for c in summary["by_category"] if c["category_id"] == food)
+    assert food_total["total_cents"] == sum(e["amount_cents"] for e in november_food)
+
+    # On its own, and with a date range.
+    assert len(client.get(f"{API}/expenses?category_id={food}").json()) == 3
+    ranged = client.get(f"{API}/expenses?from=2026-11-01&to=2026-11-15&category_id={food}").json()
+    assert [e["amount_cents"] for e in ranged] == [200]
+
+    # A deactivated category still lists its expenses; an unknown one lists nothing.
+    client.patch(f"{API}/categories/{gifts}", json={"is_active": False})
+    assert len(client.get(f"{API}/expenses?category_id={gifts}").json()) == 1
+    assert client.get(f"{API}/expenses?category_id=9999").json() == []
+    assert client.get(f"{API}/expenses?category_id=abc").status_code == 422
+
+
 def test_february_in_a_leap_year(client, categories):
     make_expense(client, categories, expense_date="2024-02-29")
     assert len(client.get(f"{API}/expenses?month=2024-02").json()) == 1

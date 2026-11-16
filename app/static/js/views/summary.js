@@ -1,9 +1,10 @@
 // "Riepilogo": month total and total per category. Deliberately simple:
-// the real analysis happens on the exported CSV.
+// the real analysis happens on the exported CSV. Each category opens the
+// list of its expenses (summary-category.js).
 
 import { api } from '../api.js';
 import { h, formatEuro, formatShare, monthLabel, currentMonth, loadingBlock, errorBlock } from '../ui.js';
-import { monthSwitcher } from './movements.js';
+import { monthSwitcher, monthFromQuery } from './movements.js';
 
 // Donut of the month: the five largest categories plus "Altre". Colors go
 // by rank within the month (largest first); the legend next to the ring
@@ -76,8 +77,20 @@ function donut(summary) {
     legend);
 }
 
+// "/riepilogo/categoria/3?mese=2026-10"; the month is left out when current.
+export function categoryPath(categoryId, month) {
+  const base = `/riepilogo/categoria/${categoryId}`;
+  return month === currentMonth() ? base : `${base}?mese=${month}`;
+}
+
+function summaryPath(month) {
+  return month === currentMonth() ? '/riepilogo' : `/riepilogo?mese=${month}`;
+}
+
 export async function mount(root, ctx) {
-  let month = currentMonth();
+  // The month is kept in the address, so coming back from a category
+  // shows the same month again.
+  let month = monthFromQuery(ctx.query);
   const switcherSlot = h('div');
   const body = h('div');
   root.append(
@@ -87,6 +100,7 @@ export async function mount(root, ctx) {
   // quiet: see the same option in movements.js.
   async function show(nextMonth, { quiet = false } = {}) {
     month = nextMonth;
+    history.replaceState(history.state, '', summaryPath(month));
     switcherSlot.replaceChildren(monthSwitcher(month, show));
     if (!quiet) body.replaceChildren(loadingBlock());
     let summary;
@@ -117,13 +131,19 @@ export async function mount(root, ctx) {
         const fill = h('span', { class: 'bar-fill' });
         // Bars are relative to the largest category, so the top one is full width.
         fill.style.width = `${Math.max(2, Math.round((category.total_cents / largest) * 100))}%`;
-        return h('li', { class: 'bar' },
+        const count = category.expense_count === 1 ? '1 spesa' : `${category.expense_count} spese`;
+        const share = formatShare(category.total_cents, summary.total_cents);
+        return h('li', {},
+          h('a', {
+            class: 'bar', href: categoryPath(category.category_id, month), dataset: { link: '' },
+            'aria-label': `${category.category_name}: ${formatEuro(category.total_cents)}, ${share} del mese, ${count}. Vedi le spese`,
+          },
           h('span', { class: 'bar-head' },
             h('span', { class: 'bar-name' }, category.category_name),
-            h('span', { class: 'bar-amount' }, formatEuro(category.total_cents))),
+            h('span', { class: 'bar-amount' }, formatEuro(category.total_cents)),
+            h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›')),
           h('span', { class: 'bar-track' }, fill),
-          h('span', { class: 'bar-meta' },
-            `${formatShare(category.total_cents, summary.total_cents)} del mese, ${category.expense_count === 1 ? '1 spesa' : `${category.expense_count} spese`}`));
+          h('span', { class: 'bar-meta' }, `${share} del mese, ${count}`)));
       })));
   }
 
