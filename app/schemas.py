@@ -198,6 +198,65 @@ class RecurringRegistered(BaseModel):
     recurring: RecurringOut
 
 
+# --- incomes ------------------------------------------------------------
+
+# Fixed list of income categories: code -> name shown in the app and in the
+# CSV, in display order. Changing it is a code change, released as a new
+# version. Codes are stored in incomes.category; a name can change freely.
+INCOME_CATEGORIES = {
+    "salary": "Stipendio",
+    "refund": "Rimborsi",
+    "gift": "Regali",
+    "sale": "Vendite",
+    "other": "Altro",
+}
+IncomeCategory = Literal[tuple(INCOME_CATEGORIES)]
+
+
+class IncomeCategoryOut(BaseModel):
+    code: str
+    name: str
+
+
+class IncomeCreate(BaseModel):
+    amount: str = Field(max_length=20, description='Decimal text, comma or dot: "1850,00"')
+    category: IncomeCategory
+    income_date: date
+    note: str | None = Field(default=None, max_length=300)
+    received_by_user_id: int | None = Field(default=None, description="Defaults to the logged-in user")
+    client_uuid: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=64,
+        description="Idempotency key: retrying with the same value never creates a duplicate",
+    )
+
+
+class IncomeUpdate(BaseModel):
+    """Partial update: only the fields present in the body are changed."""
+
+    amount: str | None = Field(default=None, max_length=20)
+    category: IncomeCategory | None = None
+    income_date: date | None = None
+    note: str | None = Field(default=None, max_length=300)
+    received_by_user_id: int | None = None
+
+
+class IncomeOut(BaseModel):
+    id: int
+    amount_cents: int
+    income_date: date
+    category: str
+    category_name: str
+    note: str | None
+    received_by_user_id: int
+    received_by_name: str
+    created_by_user_id: int
+    created_by_name: str
+    created_at: str
+    updated_at: str
+
+
 # --- summary ------------------------------------------------------------
 
 class CategoryTotal(BaseModel):
@@ -209,9 +268,23 @@ class CategoryTotal(BaseModel):
 
 class SummaryOut(BaseModel):
     month: str
-    total_cents: int
+    total_cents: int = Field(description="Expenses of the month")
     expense_count: int
     by_category: list[CategoryTotal]
+    income_cents: int = Field(description="Incomes of the month")
+    income_count: int
+    balance_cents: int = Field(description="income_cents - total_cents; may be negative")
+
+
+class MonthTotals(BaseModel):
+    """One month of GET /summary/trend."""
+
+    month: str
+    income_cents: int
+    income_count: int
+    expense_cents: int
+    expense_count: int
+    balance_cents: int = Field(description="income_cents - expense_cents; may be negative")
 
 
 class MessageOut(BaseModel):

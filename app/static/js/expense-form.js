@@ -5,7 +5,8 @@ import { h, todayIso, PAYMENT_LABELS } from './ui.js';
 
 const MAX_SUGGESTIONS = 6;
 // Light check for instant feedback; the server does the real parsing.
-const AMOUNT_SHAPE = /^\s*€?\s*(\d[\d.,]*|[.,]\d{1,2})\s*€?\s*$/;
+// Also used by the income form.
+export const AMOUNT_SHAPE = /^\s*€?\s*(\d[\d.,]*|[.,]\d{1,2})\s*€?\s*$/;
 
 function normalize(text) {
   return text.trim().replace(/\s+/g, ' ').toLocaleLowerCase('it-IT');

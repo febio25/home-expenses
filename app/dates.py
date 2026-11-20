@@ -25,7 +25,7 @@ def today() -> date:
 
 
 def check_expense_date(value: date) -> None:
-    """Reject expense dates in the future or before 2000 (422)."""
+    """Reject expense (and income) dates in the future or before 2000 (422)."""
     if value < EARLIEST_EXPENSE_DATE:
         raise HTTPException(status_code=422, detail="Data non valida: deve essere dal 2000 in poi.")
     if value > today() + FUTURE_TOLERANCE:
@@ -38,6 +38,8 @@ def month_bounds(month: str) -> tuple[date, date]:
     if not match:
         raise HTTPException(status_code=422, detail="Mese non valido: usa il formato AAAA-MM.")
     year, month_number = int(match.group(1)), int(match.group(2))
+    if year < 1:  # "0000-01" matches the pattern but is no date
+        raise HTTPException(status_code=422, detail="Mese non valido: usa il formato AAAA-MM.")
     last_day = calendar.monthrange(year, month_number)[1]
     return date(year, month_number, 1), date(year, month_number, last_day)
 

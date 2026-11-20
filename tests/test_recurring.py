@@ -179,12 +179,14 @@ def test_moving_back_to_a_clamped_date_keeps_the_day(client, categories):
 
 
 def test_restore_of_a_v010_backup_gets_the_new_table(client, tmp_path):
-    """A backup made by v0.1.x (schema 1) restores and is migrated to schema 2."""
+    """A backup made by v0.1.x (schema 1) restores and is migrated to the
+    latest schema (recurring templates in 2, incomes in 3)."""
     import sqlite3
     from pathlib import Path
 
     import app
     from app.config import get_settings
+    from app.db import latest_schema_version
     from app.security import hash_password
 
     old = tmp_path / "old.db"
@@ -204,7 +206,8 @@ def test_restore_of_a_v010_backup_gets_the_new_table(client, tmp_path):
     assert response.status_code == 200, response.text
     live = sqlite3.connect(get_settings().db_path)
     try:
-        assert live.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert live.execute("PRAGMA user_version").fetchone()[0] == latest_schema_version() == 3
         assert live.execute("SELECT COUNT(*) FROM recurring_expenses").fetchone()[0] == 0
+        assert live.execute("SELECT COUNT(*) FROM incomes").fetchone()[0] == 0
     finally:
         live.close()

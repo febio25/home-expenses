@@ -53,6 +53,17 @@ def test_parse_invalid(text):
         parse_amount(text)
 
 
+def test_ambiguous_thousands_say_how_to_write_them():
+    # Typical for salaries: refused as before, with a message that helps.
+    with pytest.raises(AmountError, match=r"^Importo ambiguo: scrivi 1850 oppure 1\.850,00\.$"):
+        parse_amount("1.850")
+    with pytest.raises(AmountError, match="scrivi 12345 oppure 12.345,00"):
+        parse_amount("12.345")
+    # A comma with three digits is a decimal typo, not thousands.
+    with pytest.raises(AmountError, match="due decimali"):
+        parse_amount("12,345")
+
+
 def test_parse_never_uses_float():
     # 0.1 + 0.2 style traps: these must be exact.
     assert parse_amount("0,10") + parse_amount("0,20") == 30

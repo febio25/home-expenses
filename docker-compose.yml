@@ -17,7 +17,7 @@ services:
     image: spese-di-casa:local
     # ...or, to skip the build (e.g. in Portainer), comment out the two lines
     # above and use the image published by GitHub Actions instead:
-    # image: ghcr.io/febio25/home-expenses:0.4.0
+    # image: ghcr.io/febio25/home-expenses:0.5.0
     container_name: spese-di-casa
     restart: unless-stopped
     ports:

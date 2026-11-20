@@ -8,6 +8,8 @@ import * as setupView from './views/setup.js';
 import * as newView from './views/new.js';
 import * as editView from './views/edit.js';
 import * as movementsView from './views/movements.js';
+import * as incomesView from './views/incomes.js';
+import * as incomeFormView from './views/income-form.js';
 import * as summaryView from './views/summary.js';
 import * as summaryCategoryView from './views/summary-category.js';
 import * as settingsView from './views/settings.js';
@@ -18,6 +20,8 @@ const ROUTES = [
   { pattern: /^\/$/, view: newView, tab: 'new' },
   { pattern: /^\/movimenti$/, view: movementsView, tab: 'movements' },
   { pattern: /^\/spesa\/(\d+)$/, view: editView, tab: 'movements' },
+  { pattern: /^\/entrate$/, view: incomesView, tab: 'movements' },
+  { pattern: /^\/entrate\/(nuova|\d+)$/, view: incomeFormView, tab: 'movements' },
   { pattern: /^\/riepilogo$/, view: summaryView, tab: 'summary' },
   { pattern: /^\/riepilogo\/categoria\/(\d+)$/, view: summaryCategoryView, tab: 'summary' },
   { pattern: /^\/impostazioni$/, view: settingsView, tab: 'settings' },

@@ -170,6 +170,10 @@ select.input { appearance: auto; }
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0; background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--radius); padding: 3px; }
 .seg-item { min-height: 40px; border: 0; background: transparent; border-radius: 10px; font-weight: 600; }
 .seg-item.is-selected { background: var(--primary); color: #fff; }
+/* "Spese | Entrate" at the top of Movimenti: the same control, made of links */
+.seg-links { margin-bottom: 12px; }
+a.seg-item { display: flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; }
+a.seg-item.is-selected { color: #fff; }
 
 .more { margin-top: 16px; }
 .more-bar {
@@ -227,7 +231,7 @@ select.input { appearance: auto; }
 .footer-bar-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .footer-bar-row .banner { flex-basis: 100%; }
 .btn-save { min-height: 56px; font-size: 1.0625rem; }
-.expense-form { padding-bottom: 16px; }
+.expense-form, .income-form { padding-bottom: 16px; }
 
 @keyframes saved-flash {
   0% { background: var(--mark); color: var(--ink); }
@@ -303,6 +307,64 @@ select.input { appearance: auto; }
 .donut-swatch { flex: none; width: 12px; height: 12px; border-radius: 3px; }
 .donut-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .donut-share { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* --- summary: incomes and difference ------------------------------------------ */
+
+.balance { margin-top: 12px; overflow: hidden; }
+.balance-row {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 60px; padding: 10px 14px; color: inherit; text-decoration: none;
+}
+.balance-row + .balance-row { border-top: 1px solid var(--line); }
+.balance-link:active { background: var(--primary-soft); }
+.balance-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.balance-name { font-weight: 650; }
+.balance-meta { color: var(--muted); font-size: 0.8125rem; }
+.balance-amount { font-weight: 750; font-size: 1.125rem; white-space: nowrap; }
+/* sign first, colour second: "+" and "−" are always written */
+.balance-diff.is-positive, .trend-diff.is-positive { color: var(--primary); }
+.balance-diff.is-negative, .trend-diff.is-negative { color: var(--danger); }
+
+/* --- summary: last six months ------------------------------------------------ */
+
+/* Series colours: palette slots 6 (green) and 7 (violet), checked with the
+   dataviz validator on the white card (CVD, normal vision, contrast: pass).
+   Slots 1-5 already mean categories in the donut on the same screen. */
+.trend-bar.is-income, .trend-swatch.is-income { background: #008300; }
+.trend-bar.is-expense, .trend-swatch.is-expense { background: #6250d6; }
+
+.trend { margin: 12px 0 0; padding: 14px 10px 12px; }
+.trend-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 0 4px; }
+.trend-title { font-weight: 700; }
+.trend-legend { display: flex; gap: 12px; color: var(--muted); font-size: 0.8125rem; }
+.trend-key { display: inline-flex; align-items: center; gap: 6px; }
+.trend-swatch { width: 12px; height: 12px; border-radius: 3px; }
+.trend-plot { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin-top: 12px; }
+/* each month is one tap target: its two columns and both labels */
+.trend-col {
+  display: flex; flex-direction: column; align-items: stretch; min-width: 0;
+  padding: 0 0 6px; border: 0; border-radius: 10px; background: transparent;
+}
+.trend-col.is-selected { background: var(--paper); }
+.trend-bars {
+  display: flex; align-items: flex-end; justify-content: center; gap: 2px;
+  height: 112px; padding-top: 6px; border-bottom: 1px solid #B9C7C0;
+}
+.trend-bar { flex: none; width: min(14px, 36%); border-radius: 4px 4px 0 0; }
+.trend-bar.is-empty { height: 0; }
+.trend-month { margin-top: 6px; color: var(--muted); font-size: 0.75rem; line-height: 1.2; text-align: center; }
+.trend-col.is-selected .trend-month { color: var(--ink); font-weight: 700; }
+.trend-diff {
+  margin-top: 2px; font-size: 0.75rem; font-weight: 700; line-height: 1.2; text-align: center;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em; white-space: nowrap;
+}
+.trend-diff.is-zero { color: var(--ink); }
+.trend-diff.is-none { color: var(--muted); font-weight: 400; }
+.trend-note { color: var(--muted); font-size: 0.75rem; margin: 8px 4px 0; }
+.trend-readout { display: flex; flex-direction: column; margin: 8px 4px 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 0.875rem; }
+.trend-readout-month::first-letter { text-transform: uppercase; }
+.trend-readout-month { display: block; }
+.trend-readout-values { color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* --- recurring --------------------------------------------------------------- */
 

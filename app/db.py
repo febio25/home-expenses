@@ -1,6 +1,7 @@
 """SQLite access: connections, migrations and small shared helpers.
 
-Plain sqlite3 from the standard library, no ORM: the schema is five tables.
+Plain sqlite3 from the standard library, no ORM: the schema is a handful of
+tables.
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from pathlib import Path
 from .config import get_settings
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+# Tables of schema version 1: any backup of this app has them. Tables added
+# later (recurring_expenses, incomes) are created by migrate() after a restore.
 REQUIRED_TABLES = {"users", "sessions", "categories", "merchants", "expenses"}
 
 

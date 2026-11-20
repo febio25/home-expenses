@@ -12,6 +12,9 @@ MAX_CENTS = 100_000_000  # 1,000,000.00 EUR: anything above is a typo
 # Lenient on purpose: "12," and ",50" are what a thumb types in a hurry.
 _PLAIN = re.compile(r"^(\d*)(?:[.,](\d{0,2}))?$")
 _GROUPED = re.compile(r"^(\d{1,3}(?:[.,]\d{3})+)[.,](\d{1,2})$")
+# "1.850": Italian thousands, or decimals the English way? Still refused,
+# with a message that says how to write it (salaries are typed like this).
+_DOT_THOUSANDS = re.compile(r"^\d{1,3}(?:\.\d{3})+$")
 
 
 class AmountError(ValueError):
@@ -39,6 +42,9 @@ def parse_amount(text: str) -> int:
     else:
         grouped = _GROUPED.match(cleaned)
         if not grouped:
+            if _DOT_THOUSANDS.match(cleaned):
+                digits = cleaned.replace(".", "")
+                raise AmountError(f"Importo ambiguo: scrivi {digits} oppure {cleaned},00.")
             if re.match(r"^\d+[.,]\d{3,}$", cleaned):
                 raise AmountError("Usa al massimo due decimali (es. 12,50).")
             raise AmountError("Importo non valido: usa un formato come 12,50.")

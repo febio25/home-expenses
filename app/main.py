@@ -14,7 +14,17 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from . import __version__
 from .config import get_settings
 from .db import connect, init_db
-from .routers import auth, backup, categories, expenses, export, merchants, recurring, summary
+from .routers import (
+    auth,
+    backup,
+    categories,
+    expenses,
+    export,
+    incomes,
+    merchants,
+    recurring,
+    summary,
+)
 from .security import LoginThrottle
 
 STATIC_DIR = (Path(__file__).parent / "static").resolve()
@@ -79,7 +89,9 @@ def create_app() -> FastAPI:
     )
     app.state.login_throttle = LoginThrottle()
 
-    for module in (auth, expenses, recurring, categories, merchants, summary, export, backup):
+    for module in (
+        auth, expenses, incomes, recurring, categories, merchants, summary, export, backup,
+    ):
         app.include_router(module.router, prefix=API_PREFIX)
 
     @app.middleware("http")

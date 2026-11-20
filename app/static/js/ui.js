@@ -53,6 +53,12 @@ export function formatEuro(cents) {
   return euro.format(cents / 100);
 }
 
+// A difference: "+1.250,00 €", "−80,00 €" (true minus sign), "0,00 €".
+export function formatSignedEuro(cents) {
+  if (!cents) return euro.format(0);
+  return `${cents > 0 ? '+' : '−'}${euro.format(Math.abs(cents) / 100)}`;
+}
+
 // Share of a total as "23%"; a share that rounds to zero reads "<1%", not "0%".
 export function formatShare(part, total) {
   if (!total || !part) return '0%';

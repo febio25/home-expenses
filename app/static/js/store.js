@@ -8,6 +8,7 @@ export const state = {
   users: null,       // [{ id, display_name }]
   categories: null,  // active and inactive
   merchants: null,   // most used first
+  incomeCategories: null, // fixed list [{ code, name }], changes only with a new version
 };
 
 export async function loadMe() {
@@ -32,6 +33,11 @@ export async function loadMerchants({ force = false } = {}) {
   return state.merchants;
 }
 
+export async function loadIncomeCategories() {
+  if (!state.incomeCategories) state.incomeCategories = await api.get('/incomes/categories');
+  return state.incomeCategories;
+}
+
 // Forget the cached lists; the next load* call fetches them again.
 export function invalidateLists() {
   state.users = null;
@@ -44,6 +50,7 @@ export function clearState() {
   state.users = null;
   state.categories = null;
   state.merchants = null;
+  state.incomeCategories = null;
 }
 
 // Per-device preferences and the unsent draft live in localStorage. Access

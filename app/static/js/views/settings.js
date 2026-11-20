@@ -159,8 +159,14 @@ function exportSection() {
     h('div', {}, h('label', { class: 'label', for: 'export-from' }, 'Dal'), from),
     h('div', {}, h('label', { class: 'label', for: 'export-to' }, 'Al'), to));
 
+  let what = 'expenses';
   let period = 'month';
   let format = 'standard';
+  // Two separate files: the expense CSV keeps its usual columns.
+  const EXPORTS = {
+    expenses: { path: '/export.csv', fallbackName: 'spese.csv' },
+    incomes: { path: '/export/incomes.csv', fallbackName: 'entrate.csv' },
+  };
   function choice(name, options, onPick) {
     return h('div', { class: 'radio-list' }, options.map((option, index) => h('label', { class: 'radio' },
       h('input', {
@@ -187,13 +193,19 @@ function exportSection() {
       }
       button.disabled = true;
       try {
-        await api.download(`/export.csv?${query}`, 'spese.csv');
+        await api.download(`${EXPORTS[what].path}?${query}`, EXPORTS[what].fallbackName);
       } catch (error) { report(error, 'Export non riuscito'); }
       button.disabled = false;
     },
   }, 'Scarica CSV');
 
   return h('div', {},
+    h('span', { class: 'label' }, 'Cosa esportare'),
+    choice('export-what', [
+      { value: 'expenses', label: 'Spese' },
+      { value: 'incomes', label: 'Entrate', hint: 'Un file a parte: data, importo, categoria, nota, ricevuto da.' },
+    ], (value) => { what = value; }),
+    h('span', { class: 'label' }, 'Periodo'),
     choice('export-period', [
       { value: 'month', label: 'Un mese' },
       { value: 'range', label: 'Un intervallo di date' },
@@ -233,7 +245,7 @@ function backupSection() {
       if (!file) return;
       const confirmed = await confirmDialog({
         title: 'Ripristinare questo backup?',
-        message: `Tutti i dati attuali (spese, categorie, esercenti, utenti e password) saranno sostituiti con quelli di «${file.name}». Una copia dei dati attuali resta sul server.`,
+        message: `Tutti i dati attuali (spese, entrate, categorie, esercenti, utenti e password) saranno sostituiti con quelli di «${file.name}». Una copia dei dati attuali resta sul server.`,
         confirmLabel: 'Ripristina',
         danger: true,
       });
@@ -345,7 +357,7 @@ export async function mount(root, ctx) {
       h('span', { class: 'settings-go', 'aria-hidden': 'true' }, '›')),
     section('Categorie', 'Aggiungi, rinomina, disattiva', categories.element),
     section('Esercenti', 'Rinomina o unisci i doppioni', merchants.element),
-    section('Esporta CSV', 'Per mese o intervallo di date', exportSection()),
+    section('Esporta CSV', 'Spese o entrate, per mese o intervallo di date', exportSection()),
     section('Backup e ripristino', 'Scarica o ricarica tutti i dati', backupSection()),
     section('Account', 'Password, uscita', accountSection(users, ctx.navigate)),
     version);
