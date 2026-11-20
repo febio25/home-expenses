@@ -15,6 +15,7 @@ import * as summaryCategoryView from './views/summary-category.js';
 import * as settingsView from './views/settings.js';
 import * as recurringView from './views/recurring.js';
 import * as recurringFormView from './views/recurring-form.js';
+import * as recurringIncomeFormView from './views/recurring-income-form.js';
 
 const ROUTES = [
   { pattern: /^\/$/, view: newView, tab: 'new' },
@@ -27,6 +28,7 @@ const ROUTES = [
   { pattern: /^\/impostazioni$/, view: settingsView, tab: 'settings' },
   { pattern: /^\/ricorrenti$/, view: recurringView, tab: 'settings' },
   { pattern: /^\/ricorrenti\/(nuova|\d+)(?:\/(registra))?$/, view: recurringFormView, tab: 'settings' },
+  { pattern: /^\/ricorrenti\/entrate\/(nuova|\d+)(?:\/(registra))?$/, view: recurringIncomeFormView, tab: 'settings' },
   { pattern: /^\/login$/, view: loginView, public: true },
   { pattern: /^\/setup$/, view: setupView, public: true },
 ];

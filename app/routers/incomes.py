@@ -38,7 +38,7 @@ def income_out(row: sqlite3.Row) -> dict:
     return data
 
 
-def _fetch(db: sqlite3.Connection, income_id: int) -> dict:
+def fetch_income(db: sqlite3.Connection, income_id: int) -> dict:
     row = db.execute(f"{INCOME_SELECT} WHERE i.id = ?", (income_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Entrata non trovata.")
@@ -76,22 +76,18 @@ def list_incomes(
     return [income_out(row) for row in rows]
 
 
-@router.post("", response_model=IncomeOut, status_code=201)
-def create_income(
-    body: IncomeCreate,
-    response: Response,
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    """Record an income.
+def insert_income(
+    db: sqlite3.Connection, user: sqlite3.Row, body: IncomeCreate
+) -> tuple[int, bool]:
+    """Insert an income without committing. Returns (id, created).
 
-    Retrying with the same ``client_uuid`` (for example after a dropped
-    connection) returns the income already saved, with status 200.
+    With a ``client_uuid`` already known, nothing is inserted and the id of
+    the existing income is returned with ``created`` False. Also used when
+    registering a recurring income, inside the same transaction.
     """
     existing = _by_client_uuid(db, body.client_uuid)
     if existing is not None:
-        response.status_code = 200
-        return _fetch(db, existing)
+        return existing, False
 
     amount_cents = _amount(body.amount)
     check_expense_date(body.income_date)  # same window as expenses: 2000 to today
@@ -122,10 +118,28 @@ def create_income(
         existing = _by_client_uuid(db, body.client_uuid)
         if existing is None:
             raise
+        return existing, False
+    return cursor.lastrowid, True
+
+
+@router.post("", response_model=IncomeOut, status_code=201)
+def create_income(
+    body: IncomeCreate,
+    response: Response,
+    user: sqlite3.Row = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Record an income.
+
+    Retrying with the same ``client_uuid`` (for example after a dropped
+    connection) returns the income already saved, with status 200.
+    """
+    income_id, created = insert_income(db, user, body)
+    if created:
+        db.commit()
+    else:
         response.status_code = 200
-        return _fetch(db, existing)
-    db.commit()
-    return _fetch(db, cursor.lastrowid)
+    return fetch_income(db, income_id)
 
 
 @router.get("/{income_id}", response_model=IncomeOut)
@@ -134,7 +148,7 @@ def get_income(
     user: sqlite3.Row = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    return _fetch(db, income_id)
+    return fetch_income(db, income_id)
 
 
 @router.patch("/{income_id}", response_model=IncomeOut)
@@ -145,7 +159,7 @@ def update_income(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Change only the fields present in the body. ``"note": null`` clears the note."""
-    _fetch(db, income_id)
+    fetch_income(db, income_id)
     sent = body.model_fields_set
     changes: dict[str, object] = {}
 
@@ -177,7 +191,7 @@ def update_income(
             f"UPDATE incomes SET {assignments} WHERE id = ?", (*changes.values(), income_id)
         )
         db.commit()
-    return _fetch(db, income_id)
+    return fetch_income(db, income_id)
 
 
 @router.delete("/{income_id}", status_code=204)
@@ -186,6 +200,6 @@ def delete_income(
     user: sqlite3.Row = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    _fetch(db, income_id)
+    fetch_income(db, income_id)
     db.execute("DELETE FROM incomes WHERE id = ?", (income_id,))
     db.commit()

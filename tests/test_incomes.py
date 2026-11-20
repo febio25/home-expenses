@@ -368,6 +368,7 @@ def test_restore_of_a_backup_without_incomes(client, categories, tmp_path):
     old.write_bytes(client.get(f"{API}/backup").content)
     conn = sqlite3.connect(old)
     conn.execute("DROP TABLE incomes")
+    conn.execute("DROP TABLE recurring_incomes")  # schema 4, newer still
     conn.execute("PRAGMA user_version = 2")
     conn.commit()
     conn.close()

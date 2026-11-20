@@ -380,8 +380,12 @@ a.seg-item.is-selected { color: #fff; }
 .due-head { display: block; color: inherit; text-decoration: none; }
 .due-head .row-meta { white-space: normal; }
 .row-meta.is-late { color: var(--danger); font-weight: 650; }
-.due-actions { display: flex; gap: 8px; margin-top: 12px; }
+/* "Registra 1.850,00 €" on its own row, "Modifica" and "Salta" below: with
+   four-digit amounts (salaries) one row no longer fitted at 320 px. */
+.due-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .due-actions .btn { padding-left: 12px; padding-right: 12px; }
+.due-actions .btn-grow { flex: 1 1 100%; }
+.due-actions .btn-quiet { flex: 1 1 0; }
 .recurring-add { margin-top: 20px; }
 .recurring-manage { display: flex; gap: 8px; margin-bottom: 12px; }
 

@@ -57,6 +57,18 @@ def add_months(start: date, months: int, day_of_month: int) -> date:
     return date(year, month, min(day_of_month, last_day))
 
 
+def due_day_after_change(new_due: date, current_day: int) -> int:
+    """Day of month a template keeps when its next due date is moved by hand.
+
+    A date clamped to the end of a short month (day 31 -> 30 Nov, as an
+    "Annulla" puts it back) keeps the original day; any other date sets a
+    new day of month. Shared by expense and income templates.
+    """
+    last_day = calendar.monthrange(new_due.year, new_due.month)[1]
+    clamped = new_due.day == last_day and current_day > last_day
+    return current_day if clamped else new_due.day
+
+
 def resolve_range(
     month: str | None, date_from: date | None, date_to: date | None
 ) -> tuple[date | None, date | None]:

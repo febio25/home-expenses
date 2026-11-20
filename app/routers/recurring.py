@@ -8,13 +8,12 @@ creates a normal expense and moves ``next_due`` forward by
 
 from __future__ import annotations
 
-import calendar
 import sqlite3
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from ..dates import add_months
+from ..dates import add_months, due_day_after_change
 from ..db import get_db, utc_now
 from ..schemas import (
     ExpenseCreate,
@@ -159,11 +158,7 @@ def update_recurring(
         changes["interval_months"] = body.interval_months
     if "next_due" in sent:
         changes["next_due"] = body.next_due.isoformat()
-        # A day clamped to the end of a short month (31 -> 30 Nov) keeps its
-        # original value; any other date sets a new day of month.
-        last_day = calendar.monthrange(body.next_due.year, body.next_due.month)[1]
-        clamped = body.next_due.day == last_day and current["day_of_month"] > last_day
-        changes["day_of_month"] = current["day_of_month"] if clamped else body.next_due.day
+        changes["day_of_month"] = due_day_after_change(body.next_due, current["day_of_month"])
     if "is_active" in sent:
         changes["is_active"] = int(body.is_active)
 

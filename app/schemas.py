@@ -257,6 +257,60 @@ class IncomeOut(BaseModel):
     updated_at: str
 
 
+# --- recurring incomes ----------------------------------------------------
+# The twin of the recurring expense templates: same rules, own table.
+
+class RecurringIncomeCreate(BaseModel):
+    amount: str = Field(max_length=20, description="Proposed amount; can change at each registration")
+    category: IncomeCategory
+    note: str | None = Field(default=None, max_length=300)
+    received_by_user_id: int | None = Field(default=None, description="Defaults to the logged-in user")
+    interval_months: int = Field(ge=1, le=12, description="1 monthly, 2 bimonthly, 3 quarterly, 12 yearly")
+    next_due: date = Field(description="First occurrence; its day of month is kept for the next ones")
+
+
+class RecurringIncomeUpdate(BaseModel):
+    """Partial update. Changing ``next_due`` also sets the day of month."""
+
+    amount: str | None = Field(default=None, max_length=20)
+    category: IncomeCategory | None = None
+    note: str | None = Field(default=None, max_length=300)
+    received_by_user_id: int | None = None
+    interval_months: int | None = Field(default=None, ge=1, le=12)
+    next_due: date | None = None
+    is_active: bool | None = None
+
+
+class RecurringIncomeOut(BaseModel):
+    id: int
+    amount_cents: int
+    category: str
+    category_name: str
+    note: str | None
+    received_by_user_id: int
+    received_by_name: str
+    interval_months: int
+    day_of_month: int
+    next_due: date
+    is_active: bool
+
+
+class RecurringIncomeRegister(RecurringOccurrence):
+    """Fields left out are taken from the template; the date defaults to ``due_date``."""
+
+    amount: str | None = Field(default=None, max_length=20)
+    income_date: date | None = None
+    category: IncomeCategory | None = None
+    note: str | None = Field(default=None, max_length=300)
+    received_by_user_id: int | None = None
+    client_uuid: str | None = Field(default=None, min_length=8, max_length=64)
+
+
+class RecurringIncomeRegistered(BaseModel):
+    income: IncomeOut
+    recurring: RecurringIncomeOut
+
+
 # --- summary ------------------------------------------------------------
 
 class CategoryTotal(BaseModel):

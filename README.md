@@ -21,9 +21,11 @@ esposta su internet.
   spese), un piccolo istogramma degli ultimi 6 mesi con entrate e spese
   affiancate e la differenza sotto ogni mese, poi grafico a ciambella e totale
   per categoria. Toccando una categoria si vedono le spese che la compongono.
-- Spese ricorrenti (abbonamenti, bollette): alla scadenza compaiono come «da
-  registrare» e si confermano con un tocco, cambiando l'importo se serve.
-  Nulla viene registrato in automatico.
+- Spese ed entrate ricorrenti (abbonamenti, bollette, stipendi): alla
+  scadenza compaiono come «da registrare» e si confermano con un tocco,
+  cambiando l'importo se serve. Nulla viene registrato in automatico.
+  Si gestiscono da *Impostazioni → Ricorrenti*; il promemoria compare in
+  Nuova spesa e, per le entrate, anche nella lista delle entrate.
 - Gestione di categorie ed esercenti (rinomina, disattiva, unisci i doppioni).
 - Export CSV per mese o intervallo, in due formati: un file per le spese e
   uno per le entrate.
@@ -283,14 +285,14 @@ ricarica la pagina una volta e riprova.
 
 ### Su Umbrel
 
-Esempio con la versione `0.5.0`.
+Esempio con la versione `0.6.0`.
 
 1. Nel repository `home-expenses` la versione in `app/__init__.py`
    (`__version__`) deve essere quella nuova. Fai commit e push.
 2. Crea e invia il tag:
 
    ```bash
-   git tag v0.5.0 && git push origin v0.5.0
+   git tag v0.6.0 && git push origin v0.6.0
    ```
 
 3. In **Actions** apri l'esecuzione «Release image» e, alla fine, copia la
@@ -301,7 +303,7 @@ Esempio con la versione `0.5.0`.
 
    ```bash
    cd umbrel-app-store
-   LINE='image: ghcr.io/febio25/home-expenses:0.5.0@sha256:INCOLLA_QUI'
+   LINE='image: ghcr.io/febio25/home-expenses:0.6.0@sha256:INCOLLA_QUI'
    sed -i '' "s|^    image: ghcr.io/febio25/home-expenses:.*|    ${LINE}|" tallynest-expenses/docker-compose.yml
    grep -n -A1 "image:" tallynest-expenses/docker-compose.yml
    ```
@@ -333,7 +335,7 @@ docker compose up -d --build
   entrate, ricorrenti, categorie, esercenti), compresi gli utenti e le loro
   password in forma protetta (hash). Conservalo in un posto sicuro. I backup
   delle versioni precedenti si ripristinano: le tabelle aggiunte dopo
-  (ricorrenti, entrate) vengono create vuote.
+  (spese ricorrenti, entrate, entrate ricorrenti) vengono create vuote.
 - **Ripristino:** stessa schermata, *Ripristina da file…*. Sostituisce tutti i
   dati con quelli del file, utenti e password compresi. L'app controlla che il
   file sia un backup integro prima di toccare qualcosa e salva una copia dei
@@ -489,6 +491,11 @@ CDN.
   `gift`, `sale`, `other`, con i nomi in italiano). Export:
   `GET /api/v1/export/incomes.csv`, con gli stessi filtri e formati di
   `/export.csv`.
+- Entrate ricorrenti: stessi endpoint e stesse regole delle spese ricorrenti
+  sotto `/api/v1/recurring-incomes` (`GET/POST`, `GET/PATCH/DELETE /{id}`,
+  `POST /{id}/register` che crea l'entrata e sposta la scadenza, `POST
+  /{id}/skip`), con `category` e `received_by_user_id` al posto di categoria,
+  esercente e metodo di pagamento.
 - Riepilogo: `GET /api/v1/summary?month=AAAA-MM` restituisce le spese
   (`total_cents`, `by_category`), le entrate (`income_cents`, `income_count`)
   e `balance_cents` (entrate meno spese). `GET /api/v1/summary/trend?month=AAAA-MM&months=6`
@@ -523,8 +530,9 @@ app/
   schemas.py       modelli JSON dell'API
   migrations/      schema del database (file SQL numerati)
   cli.py           strumenti di recupero (reimpostazione password)
-  routers/         endpoint: auth, expenses, incomes, recurring, categories,
-                   merchants, summary, export, backup
+  routers/         endpoint: auth, expenses, incomes, recurring,
+                   recurring_incomes, categories, merchants, summary,
+                   export, backup
   static/          frontend (HTML, CSS, JavaScript, manifest, service worker)
 tests/             test automatici (pytest)
 scripts/           generazione delle icone

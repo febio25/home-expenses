@@ -134,13 +134,16 @@ export async function mount(root, ctx) {
     saveButton.classList.add('is-saved');
   }
 
-  // Recurring expenses due today or earlier: a one-line reminder, loaded in
-  // the background so it never delays the amount field.
+  // Recurring expenses and incomes due today or earlier: a one-line
+  // reminder, loaded in the background so it never delays the amount field.
   const dueBanner = h('a', { class: 'due-banner', href: '/ricorrenti', dataset: { link: '' }, hidden: true });
   function loadDueBanner() {
-    api.get('/recurring').then((templates) => {
+    Promise.all([
+      api.get('/recurring'),
+      api.get('/recurring-incomes').catch(() => []), // the expense reminder must not depend on it
+    ]).then(([expenses, incomes]) => {
       if (!ctx.isCurrent()) return;
-      const due = templates.filter((t) => t.is_active && t.next_due <= todayIso()).length;
+      const due = [...expenses, ...incomes].filter((t) => t.is_active && t.next_due <= todayIso()).length;
       dueBanner.hidden = !due;
       if (!due) return;
       dueBanner.replaceChildren(
