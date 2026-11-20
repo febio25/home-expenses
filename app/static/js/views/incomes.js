@@ -12,7 +12,8 @@ export function newIncomePath(month) {
   return month === currentMonth() ? '/entrate/nuova' : `/entrate/nuova?mese=${month}`;
 }
 
-function incomeRow(income) {
+// Shared with the incomes summary (summary-incomes.js).
+export function incomeRow(income) {
   return h('a', { class: 'row', href: `/entrate/${income.id}`, dataset: { link: '' } },
     h('span', { class: 'row-main' },
       h('span', { class: 'row-title' }, income.category_name),

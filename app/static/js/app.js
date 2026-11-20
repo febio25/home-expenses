@@ -12,6 +12,7 @@ import * as incomesView from './views/incomes.js';
 import * as incomeFormView from './views/income-form.js';
 import * as summaryView from './views/summary.js';
 import * as summaryCategoryView from './views/summary-category.js';
+import * as summaryIncomesView from './views/summary-incomes.js';
 import * as settingsView from './views/settings.js';
 import * as recurringView from './views/recurring.js';
 import * as recurringFormView from './views/recurring-form.js';
@@ -25,6 +26,7 @@ const ROUTES = [
   { pattern: /^\/entrate\/(nuova|\d+)$/, view: incomeFormView, tab: 'movements' },
   { pattern: /^\/riepilogo$/, view: summaryView, tab: 'summary' },
   { pattern: /^\/riepilogo\/categoria\/(\d+)$/, view: summaryCategoryView, tab: 'summary' },
+  { pattern: /^\/riepilogo\/entrate$/, view: summaryIncomesView, tab: 'summary' },
   { pattern: /^\/impostazioni$/, view: settingsView, tab: 'settings' },
   { pattern: /^\/ricorrenti$/, view: recurringView, tab: 'settings' },
   { pattern: /^\/ricorrenti\/(nuova|\d+)(?:\/(registra))?$/, view: recurringFormView, tab: 'settings' },
@@ -173,7 +175,24 @@ document.addEventListener('visibilitychange', () => {
 // takes half the screen and the Save button must stay visible. With
 // interactive-widget=resizes-content the window gets shorter when the
 // keyboard opens, so a clear drop from the tallest height seen means "open".
+// Otherwise the bar never moves, scrolling included. The drop alone is not
+// enough: without a text field in focus there is no keyboard, whatever made
+// the window shorter, and the bar must come back as soon as the field is
+// left, without waiting for the window to grow again.
 const KEYBOARD_MIN_HEIGHT = 150;
+// Inputs that never open the keyboard (Android shows a picker or nothing).
+const NO_KEYBOARD_TYPES = new Set([
+  'button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden', 'image',
+  'month', 'radio', 'range', 'reset', 'submit', 'time', 'week',
+]);
+function isEditingText() {
+  const field = document.activeElement;
+  if (!field) return false;
+  if (field.isContentEditable) return true;
+  if (field.tagName === 'TEXTAREA') return !field.readOnly && !field.disabled;
+  if (field.tagName !== 'INPUT') return false;
+  return !NO_KEYBOARD_TYPES.has(field.type) && !field.readOnly && !field.disabled;
+}
 let fullHeight = window.innerHeight;
 let knownWidth = window.innerWidth;
 function trackKeyboard() {
@@ -182,10 +201,14 @@ function trackKeyboard() {
     fullHeight = window.innerHeight;
   }
   fullHeight = Math.max(fullHeight, window.innerHeight);
-  document.body.classList.toggle('is-typing', fullHeight - window.innerHeight > KEYBOARD_MIN_HEIGHT);
+  const keyboardOpen = isEditingText() && fullHeight - window.innerHeight > KEYBOARD_MIN_HEIGHT;
+  document.body.classList.toggle('is-typing', keyboardOpen);
   placeToasts(); // keep a visible toast just above the bottom bars
 }
 window.addEventListener('resize', trackKeyboard);
+document.addEventListener('focusin', trackKeyboard);
+// On focusout the next field (if any) is not focused yet: look a moment later.
+document.addEventListener('focusout', () => setTimeout(trackKeyboard, 0));
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

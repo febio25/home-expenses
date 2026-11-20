@@ -51,7 +51,10 @@ a { color: var(--primary); }
 
 /* --- shell ---------------------------------------------------------------- */
 
-.app { display: flex; flex-direction: column; height: 100dvh; }
+/* The shell is pinned to the window: only .view scrolls, so the bottom bar
+   stays put even where a phone reports the screen a little taller than the
+   page (the document itself has nothing to scroll). */
+.app { position: fixed; inset: 0; display: flex; flex-direction: column; }
 .view { flex: 1; min-height: 0; overflow-y: auto; outline: none; }
 .view-inner {
   display: flex; flex-direction: column;
@@ -282,7 +285,7 @@ a.seg-item.is-selected { color: #fff; }
 .bars > li + li { border-top: 1px solid var(--line); }
 /* each category is a link to its expenses */
 .bar { display: block; padding: 12px 14px; color: inherit; text-decoration: none; }
-.bar:active { background: var(--primary-soft); }
+a.bar:active { background: var(--primary-soft); }
 .bar-head { display: flex; align-items: baseline; gap: 12px; font-weight: 650; }
 .bar-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .bar-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -332,11 +335,20 @@ a.seg-item.is-selected { color: #fff; }
    Slots 1-5 already mean categories in the donut on the same screen. */
 .trend-bar.is-income, .trend-swatch.is-income { background: #008300; }
 .trend-bar.is-expense, .trend-swatch.is-expense { background: #6250d6; }
+/* Meal vouchers, on top of the income column: the lighter step of the same
+   green (#0ca30c, slot 6 dark), validated as an ordinal pair with #008300 on
+   the white card. The money part keeps the baseline; the top part carries
+   the rounded end. The incomes donut uses the same green for the vouchers
+   (INCOME_SLICES in summary.js). */
+.trend-bar.is-voucher, .trend-swatch.is-voucher { background: #0ca30c; }
+.trend-stack { flex: none; display: flex; flex-direction: column; gap: 2px; width: min(14px, 36%); }
+.trend-stack .trend-bar { width: 100%; min-height: 1px; }
+.trend-stack .trend-bar.is-income { border-radius: 0; }
 
 .trend { margin: 12px 0 0; padding: 14px 10px 12px; }
 .trend-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 0 4px; }
 .trend-title { font-weight: 700; }
-.trend-legend { display: flex; gap: 12px; color: var(--muted); font-size: 0.8125rem; }
+.trend-legend { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font-size: 0.8125rem; }
 .trend-key { display: inline-flex; align-items: center; gap: 6px; }
 .trend-swatch { width: 12px; height: 12px; border-radius: 3px; }
 .trend-plot { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin-top: 12px; }

@@ -32,6 +32,7 @@ def test_categories_are_a_fixed_list(client, anon):
         {"code": "gift", "name": "Regali"},
         {"code": "sale", "name": "Vendite"},
         {"code": "other", "name": "Altro"},
+        {"code": "meal_voucher", "name": "Buoni pasto"},  # 0.7.0, last as asked
     ]
     assert anon.get(f"{API}/incomes/categories").status_code == 401
 
@@ -386,3 +387,65 @@ def test_restore_of_a_backup_without_incomes(client, categories, tmp_path):
     finally:
         live.close()
     assert make_income(client)["amount_cents"] == 185000
+
+
+# --- meal vouchers and the income summary (0.7.0) ------------------------------
+
+
+def test_meal_vouchers_are_an_income_shown_on_their_own(client, categories):
+    make_expense(client, categories, amount="64", expense_date="2026-11-07")   # paid with vouchers, in full
+    make_income(client, amount="1850", income_date="2026-11-03")
+    vouchers = make_income(client, amount="160", category="meal_voucher", income_date="2026-11-30")
+    assert vouchers["category_name"] == "Buoni pasto"
+    make_income(client, amount="152", category="meal_voucher", income_date="2026-10-31")
+
+    november = client.get(f"{API}/summary?month=2026-11").json()
+    assert november["income_cents"] == 201000            # vouchers are part of the incomes
+    assert november["voucher_cents"] == 16000
+    assert november["balance_cents"] == 201000 - 6400
+    october = client.get(f"{API}/summary?month=2026-10").json()
+    assert (october["income_cents"], october["voucher_cents"]) == (15200, 15200)
+    empty = client.get(f"{API}/summary?month=2026-09").json()
+    assert empty["voucher_cents"] == 0
+
+    trend = {m["month"]: m for m in client.get(f"{API}/summary/trend?month=2026-11&months=3").json()}
+    assert trend["2026-11"]["voucher_cents"] == 16000 and trend["2026-11"]["income_cents"] == 201000
+    assert trend["2026-10"]["voucher_cents"] == 15200
+    assert trend["2026-09"]["voucher_cents"] == 0
+    assert trend["2026-11"]["balance_cents"] == 201000 - 6400
+
+    rows = list(csv.reader(io.StringIO(client.get(f"{API}/export/incomes.csv?month=2026-11").text)))
+    assert [r[2] for r in rows[1:]] == ["Stipendio", "Buoni pasto"]
+
+    # A monthly template for the vouchers, as for a salary.
+    template = client.post(f"{API}/recurring-incomes", json={
+        "amount": "160", "category": "meal_voucher", "interval_months": 1, "next_due": "2026-12-01",
+    })
+    assert template.status_code == 201 and template.json()["category_name"] == "Buoni pasto"
+
+
+def test_income_summary_by_category(client, anon):
+    users = users_of(client)
+    make_income(client, amount="1850", income_date="2026-11-03")
+    make_income(client, amount="1600", income_date="2026-11-03", received_by_user_id=users["Nastia"])
+    make_income(client, amount="160", category="meal_voucher", income_date="2026-11-30")
+    make_income(client, amount="50", category="gift", income_date="2026-11-14")
+    make_income(client, amount="999", income_date="2026-10-27")    # other month
+
+    summary = client.get(f"{API}/summary/incomes?month=2026-11").json()
+    assert summary["month"] == "2026-11"
+    assert summary["total_cents"] == 366000
+    assert summary["income_count"] == 4
+    assert [(c["category"], c["category_name"], c["total_cents"], c["income_count"]) for c in summary["by_category"]] == [
+        ("salary", "Stipendio", 345000, 2),
+        ("meal_voucher", "Buoni pasto", 16000, 1),
+        ("gift", "Regali", 5000, 1),
+    ]
+    # The same total as the monthly summary.
+    assert client.get(f"{API}/summary?month=2026-11").json()["income_cents"] == summary["total_cents"]
+
+    empty = client.get(f"{API}/summary/incomes?month=2026-01").json()
+    assert empty == {"month": "2026-01", "total_cents": 0, "income_count": 0, "by_category": []}
+    assert client.get(f"{API}/summary/incomes?month=2026-13").status_code == 422
+    assert client.get(f"{API}/summary/incomes").status_code == 422
+    assert anon.get(f"{API}/summary/incomes?month=2026-11").status_code == 401

@@ -5,13 +5,9 @@
 
 import { api } from '../api.js';
 import { loadCategories } from '../store.js';
-import { h, monthLabel, currentMonth, loadingBlock, errorBlock } from '../ui.js';
+import { h, monthLabel, loadingBlock, errorBlock } from '../ui.js';
 import { monthSwitcher, monthFromQuery, expenseList } from './movements.js';
-import { categoryPath } from './summary.js';
-
-function summaryPath(month) {
-  return month === currentMonth() ? '/riepilogo' : `/riepilogo?mese=${month}`;
-}
+import { categoryPath, summaryPath } from './summary.js';
 
 // The category's name comes from the category list, so it is known in a
 // month with no expenses too, and for a category deactivated since. A

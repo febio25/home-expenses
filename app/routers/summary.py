@@ -11,10 +11,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..dates import add_months, month_bounds
 from ..db import get_db
-from ..schemas import MonthTotals, SummaryOut
+from ..schemas import INCOME_CATEGORIES, IncomeSummaryOut, MonthTotals, SummaryOut
 from ..security import current_user
 
 router = APIRouter(prefix="/summary", tags=["summary"], dependencies=[Depends(current_user)])
+
+# Meal vouchers are an income category: their part is shown on its own.
+VOUCHER_CATEGORY = "meal_voucher"
 
 
 @router.get("", response_model=SummaryOut)
@@ -39,9 +42,10 @@ def monthly_summary(
     ).fetchall()
     by_category = [dict(row) for row in rows]
     income = db.execute(
-        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count"
+        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count,"
+        "       COALESCE(SUM(CASE WHEN category = ? THEN amount_cents END), 0) AS vouchers"
         "  FROM incomes WHERE income_date >= ? AND income_date <= ?",
-        (start.isoformat(), end.isoformat()),
+        (VOUCHER_CATEGORY, start.isoformat(), end.isoformat()),
     ).fetchone()
     total = sum(row["total_cents"] for row in by_category)
     return {
@@ -51,7 +55,34 @@ def monthly_summary(
         "by_category": by_category,
         "income_cents": income["cents"],
         "income_count": income["count"],
+        "voucher_cents": income["vouchers"],
         "balance_cents": income["cents"] - total,
+    }
+
+
+@router.get("/incomes", response_model=IncomeSummaryOut)
+def income_summary(
+    month: str = Query(..., description="YYYY-MM"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """The incomes of the month by category, largest first (the pie chart
+    of the incomes screen)."""
+    start, end = month_bounds(month)
+    rows = db.execute(
+        "SELECT category, SUM(amount_cents) AS total_cents, COUNT(*) AS income_count"
+        "  FROM incomes WHERE income_date >= ? AND income_date <= ?"
+        " GROUP BY category ORDER BY total_cents DESC, category",
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+    by_category = [
+        {**dict(row), "category_name": INCOME_CATEGORIES.get(row["category"], row["category"])}
+        for row in rows
+    ]
+    return {
+        "month": month,
+        "total_cents": sum(row["total_cents"] for row in by_category),
+        "income_count": sum(row["income_count"] for row in by_category),
+        "by_category": by_category,
     }
 
 
@@ -80,7 +111,7 @@ def monthly_trend(
         key = _month_key(add_months(start, offset, 1))
         totals[key] = {
             "month": key, "income_cents": 0, "income_count": 0,
-            "expense_cents": 0, "expense_count": 0,
+            "expense_cents": 0, "expense_count": 0, "voucher_cents": 0,
         }
 
     window = (start.isoformat(), last_day.isoformat())
@@ -96,6 +127,14 @@ def monthly_trend(
         for row in rows:
             totals[row["month"]][f"{prefix}_cents"] = row["cents"]
             totals[row["month"]][f"{prefix}_count"] = row["count"]
+
+    rows = db.execute(
+        "SELECT substr(income_date, 1, 7) AS month, SUM(amount_cents) AS cents FROM incomes"
+        " WHERE category = ? AND income_date >= ? AND income_date <= ? GROUP BY 1",
+        (VOUCHER_CATEGORY, *window),
+    ).fetchall()
+    for row in rows:
+        totals[row["month"]]["voucher_cents"] = row["cents"]
 
     for item in totals.values():
         item["balance_cents"] = item["income_cents"] - item["expense_cents"]

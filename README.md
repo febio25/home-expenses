@@ -13,14 +13,21 @@ esposta su internet.
 - Data, «pagato da», metodo di pagamento e nota hanno valori predefiniti
   (oggi, chi è collegato, carta) e si cambiano con un tocco.
 - Lista dei movimenti per mese, con modifica ed eliminazione.
-- Entrate (stipendi, rimborsi, regali, vendite), separate dalle spese: in
-  *Movimenti* l'interruttore «Spese | Entrate» passa da una lista all'altra,
-  e «Nuova entrata» le registra con importo, categoria da una lista fissa,
-  data, chi l'ha ricevuta e nota.
+- Entrate (stipendi, rimborsi, regali, vendite, buoni pasto), separate dalle
+  spese: in *Movimenti* l'interruttore «Spese | Entrate» passa da una lista
+  all'altra, e «Nuova entrata» le registra con importo, categoria da una
+  lista fissa, data, chi l'ha ricevuta e nota.
 - Riepilogo mensile: spese del mese, entrate e differenza (entrate meno
   spese), un piccolo istogramma degli ultimi 6 mesi con entrate e spese
   affiancate e la differenza sotto ogni mese, poi grafico a ciambella e totale
-  per categoria. Toccando una categoria si vedono le spese che la compongono.
+  per categoria. Toccando una categoria si vedono le spese che la compongono;
+  toccando *Entrate* si vedono le entrate del mese per categoria (ciambella e
+  totali) e la loro lista.
+- Buoni pasto: si registrano come entrata della categoria *Buoni pasto*
+  (per esempio il totale caricato nel mese, anche come entrata ricorrente),
+  mentre gli acquisti pagati con i buoni restano normali spese, per intero.
+  Nel riepilogo la parte in buoni è indicata sotto le entrate e, nell'istogramma,
+  in verde più chiaro in cima alla colonna delle entrate.
 - Spese ed entrate ricorrenti (abbonamenti, bollette, stipendi): alla
   scadenza compaiono come «da registrare» e si confermano con un tocco,
   cambiando l'importo se serve. Nulla viene registrato in automatico.
@@ -285,14 +292,14 @@ ricarica la pagina una volta e riprova.
 
 ### Su Umbrel
 
-Esempio con la versione `0.6.0`.
+Esempio con la versione `0.7.0`.
 
 1. Nel repository `home-expenses` la versione in `app/__init__.py`
    (`__version__`) deve essere quella nuova. Fai commit e push.
 2. Crea e invia il tag:
 
    ```bash
-   git tag v0.6.0 && git push origin v0.6.0
+   git tag v0.7.0 && git push origin v0.7.0
    ```
 
 3. In **Actions** apri l'esecuzione «Release image» e, alla fine, copia la
@@ -303,7 +310,7 @@ Esempio con la versione `0.6.0`.
 
    ```bash
    cd umbrel-app-store
-   LINE='image: ghcr.io/febio25/home-expenses:0.6.0@sha256:INCOLLA_QUI'
+   LINE='image: ghcr.io/febio25/home-expenses:0.7.0@sha256:INCOLLA_QUI'
    sed -i '' "s|^    image: ghcr.io/febio25/home-expenses:.*|    ${LINE}|" tallynest-expenses/docker-compose.yml
    grep -n -A1 "image:" tallynest-expenses/docker-compose.yml
    ```
@@ -455,8 +462,8 @@ Stessa schermata, scegliendo *Entrate*: un file a parte
 Il CSV delle spese non cambia.
 
 Colonne: `data` (AAAA-MM-GG), `importo`, `categoria` (Stipendio, Rimborsi,
-Regali, Vendite, Altro), `nota`, `ricevuto_da`, `inserito_da`, `creato_il`
-(UTC, ISO 8601).
+Regali, Vendite, Altro, Buoni pasto), `nota`, `ricevuto_da`, `inserito_da`,
+`creato_il` (UTC, ISO 8601).
 
 La lista delle categorie di entrata è fissa (in `app/schemas.py`,
 `INCOME_CATEGORIES`): per cambiarla serve una nuova versione dell'app.
@@ -488,7 +495,7 @@ CDN.
 - Entrate: `GET/POST /api/v1/incomes` (filtri `month`, oppure `from` e `to`;
   `client_uuid` come per le spese), `GET/PATCH/DELETE /api/v1/incomes/{id}` e
   `GET /api/v1/incomes/categories` (la lista fissa: `salary`, `refund`,
-  `gift`, `sale`, `other`, con i nomi in italiano). Export:
+  `gift`, `sale`, `other`, `meal_voucher`, con i nomi in italiano). Export:
   `GET /api/v1/export/incomes.csv`, con gli stessi filtri e formati di
   `/export.csv`.
 - Entrate ricorrenti: stessi endpoint e stesse regole delle spese ricorrenti
@@ -497,10 +504,13 @@ CDN.
   /{id}/skip`), con `category` e `received_by_user_id` al posto di categoria,
   esercente e metodo di pagamento.
 - Riepilogo: `GET /api/v1/summary?month=AAAA-MM` restituisce le spese
-  (`total_cents`, `by_category`), le entrate (`income_cents`, `income_count`)
-  e `balance_cents` (entrate meno spese). `GET /api/v1/summary/trend?month=AAAA-MM&months=6`
-  restituisce i totali di entrate e spese di ogni mese della finestra (da 1 a
-  24 mesi, il più vecchio per primo), anche quelli vuoti.
+  (`total_cents`, `by_category`), le entrate (`income_cents`, `income_count`,
+  `voucher_cents`: la parte nella categoria `meal_voucher`) e `balance_cents`
+  (entrate meno spese). `GET /api/v1/summary/incomes?month=AAAA-MM` restituisce
+  le entrate del mese per categoria (`total_cents`, `income_count`,
+  `by_category`, dalla più grande). `GET /api/v1/summary/trend?month=AAAA-MM&months=6`
+  restituisce i totali di entrate (con `voucher_cents`) e spese di ogni mese
+  della finestra (da 1 a 24 mesi, il più vecchio per primo), anche quelli vuoti.
 
 ## Sviluppo
 

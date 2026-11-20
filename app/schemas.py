@@ -209,6 +209,9 @@ INCOME_CATEGORIES = {
     "gift": "Regali",
     "sale": "Vendite",
     "other": "Altro",
+    # 0.7.0: the month's meal vouchers, registered as one income a month
+    # (purchases paid with them are recorded as normal expenses, in full).
+    "meal_voucher": "Buoni pasto",
 }
 IncomeCategory = Literal[tuple(INCOME_CATEGORIES)]
 
@@ -327,6 +330,7 @@ class SummaryOut(BaseModel):
     by_category: list[CategoryTotal]
     income_cents: int = Field(description="Incomes of the month")
     income_count: int
+    voucher_cents: int = Field(description="Part of income_cents in the category meal_voucher")
     balance_cents: int = Field(description="income_cents - total_cents; may be negative")
 
 
@@ -338,7 +342,24 @@ class MonthTotals(BaseModel):
     income_count: int
     expense_cents: int
     expense_count: int
+    voucher_cents: int = Field(description="Part of income_cents in the category meal_voucher")
     balance_cents: int = Field(description="income_cents - expense_cents; may be negative")
+
+
+class IncomeCategoryTotal(BaseModel):
+    category: str
+    category_name: str
+    total_cents: int
+    income_count: int
+
+
+class IncomeSummaryOut(BaseModel):
+    """GET /summary/incomes: the incomes of a month by category."""
+
+    month: str
+    total_cents: int
+    income_count: int
+    by_category: list[IncomeCategoryTotal]
 
 
 class MessageOut(BaseModel):

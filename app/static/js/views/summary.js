@@ -1,23 +1,38 @@
 // "Riepilogo": expenses of the month, incomes and the difference, a small
 // chart of the last six months, then the expenses per category.
 // Deliberately simple: the real analysis happens on the exported CSV. Each
-// category opens the list of its expenses (summary-category.js).
+// category opens the list of its expenses (summary-category.js); the
+// "Entrate" row opens the incomes of the month (summary-incomes.js).
 
 import { api } from '../api.js';
 import {
   h, formatEuro, formatSignedEuro, formatShare, monthLabel, currentMonth, loadingBlock, errorBlock,
 } from '../ui.js';
-import { monthSwitcher, monthFromQuery, incomesPath } from './movements.js';
+import { monthSwitcher, monthFromQuery } from './movements.js';
 
 const TREND_MONTHS = 6;
 
-// Donut of the month: the five largest categories plus "Altre". Colors go
-// by rank within the month (largest first); the legend next to the ring
-// names every slice with its share, so color is never the only cue.
-// Palette checked with the dataviz validator (light surface, adjacent pairs).
-const SLICE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'];
+// Donut of the month, shared by the expenses (here) and the incomes
+// (summary-incomes.js): both summaries carry total_cents and by_category,
+// largest first. The legend next to the ring names every slice with its
+// share, so color is never the only cue. Palettes checked with the dataviz
+// validator on the white card.
+//
+// Expenses: the five largest categories plus "Altre". The categories are the
+// user's own, so colors go by rank within the month: neighbouring slices are
+// always neighbouring palette slots, the adjacent pairs the validator checked.
+export const EXPENSE_SLICES = { ranked: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'] };
+// Incomes (0.7.0), a scale of their own: the meal vouchers always take the
+// light green of the chart above (.trend-bar.is-voucher), the other
+// categories blue, pink and yellow by rank, the fourth and beyond fold into
+// grey "Altre". Blue, pink and yellow are the palette hues that stay apart
+// from that green for colour-blind readers too (orange, red, aqua and the
+// darker green do not); the four were validated on every pair, since the
+// vouchers can sit anywhere in the ring. Yellow next to the green is in the
+// CVD 6-8 band, legal with the gap between slices and the named legend. The
+// grey slice comes last, so it only ever touches yellow, green or blue.
+export const INCOME_SLICES = { ranked: ['#2a78d6', '#e87ba4', '#eda100'], fixed: { meal_voucher: '#0ca30c' } };
 const OTHER_COLOR = '#8a9690';
-const MAX_SLICES = 5;
 const SVG = 'http://www.w3.org/2000/svg';
 
 function svg(tag, attrs = {}) {
@@ -26,23 +41,31 @@ function svg(tag, attrs = {}) {
   return node;
 }
 
-function slicesOf(summary) {
-  const top = summary.by_category.slice(0, MAX_SLICES).map((category, index) => ({
-    name: category.category_name, cents: category.total_cents, color: SLICE_COLORS[index],
-  }));
-  const rest = summary.by_category.slice(MAX_SLICES);
+// fixed: colors by category code (incomes only); the others take the ranked
+// colors in order of size, and what is left folds into one grey slice.
+function slicesOf(summary, { ranked, fixed = {} }) {
+  const slices = [];
+  const rest = [];
+  let rank = 0;
+  for (const category of summary.by_category) {
+    const color = fixed[category.category] ?? (rank < ranked.length ? ranked[rank++] : null);
+    if (color) slices.push({ name: category.category_name, cents: category.total_cents, color });
+    else rest.push(category);
+  }
   if (rest.length) {
-    top.push({
+    slices.push({
       name: rest.length === 1 ? rest[0].category_name : `Altre (${rest.length})`,
       cents: rest.reduce((sum, category) => sum + category.total_cents, 0),
       color: OTHER_COLOR,
     });
   }
-  return top;
+  return slices;
 }
 
-function donut(summary) {
-  const slices = slicesOf(summary);
+// title starts the description read by a screen reader; palette is
+// EXPENSE_SLICES or INCOME_SLICES.
+export function donut(summary, title, palette) {
+  const slices = slicesOf(summary, palette);
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
   const gap = slices.length > 1 ? 1.2 : 0; // thin surface gap between slices
@@ -77,7 +100,7 @@ function donut(summary) {
     `${slice.name} ${formatShare(slice.cents, summary.total_cents)}`).join(', ');
   // No figure in the hole: the total is written right above the chart, and a
   // five-digit amount did not fit inside the ring.
-  return h('figure', { class: 'card donut', 'aria-label': `Ripartizione del mese: ${label}` },
+  return h('figure', { class: 'card donut', 'aria-label': `${title}: ${label}` },
     h('div', { class: 'donut-ring' }, ring),
     legend);
 }
@@ -89,21 +112,29 @@ function signClass(cents) {
   return cents < 0 ? 'is-negative' : 'is-zero';
 }
 
-// Incomes of the month (a link to their list) and, when there are any,
+// Incomes of the month (a link to their summary) and, when there are any,
 // incomes minus expenses. A month with no income recorded shows no
 // difference: minus the expenses would read as a deficit that is not there.
+// Meal vouchers are an income like the others (category "Buoni pasto"):
+// their part is named under the total, and the difference includes them,
+// because what they paid for is among the expenses, in full.
 function balanceCard(summary, month) {
   const hasIncome = summary.income_count > 0;
   const count = summary.income_count === 1 ? '1 entrata' : `${summary.income_count} entrate`;
+  // "4 entrate, di cui 160,00 € in buoni pasto"; a no-break space keeps
+  // "buoni pasto" on one line when the text wraps.
+  const meta = summary.voucher_cents > 0
+    ? `${count}, di cui ${formatEuro(summary.voucher_cents)} in buoni pasto`
+    : count;
   const rows = [h('a', {
-    class: 'balance-row balance-link', href: incomesPath(month), dataset: { link: '' },
+    class: 'balance-row balance-link', href: incomeSummaryPath(month), dataset: { link: '' },
     'aria-label': hasIncome
-      ? `Entrate: ${formatEuro(summary.income_cents)}, ${count}. Vedi le entrate`
+      ? `Entrate: ${formatEuro(summary.income_cents)}, ${meta}. Vedi le entrate per categoria`
       : 'Nessuna entrata registrata. Vedi o aggiungi le entrate',
   },
   h('span', { class: 'balance-main' },
     h('span', { class: 'balance-name' }, 'Entrate'),
-    h('span', { class: 'balance-meta' }, hasIncome ? count : 'Stipendi, rimborsi, regali: aggiungili qui')),
+    h('span', { class: 'balance-meta' }, hasIncome ? meta : 'Stipendi, rimborsi, regali: aggiungili qui')),
   h('span', { class: 'balance-amount' }, hasIncome ? formatEuro(summary.income_cents) : 'Nessuna'),
   h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›'))];
   if (hasIncome) {
@@ -124,6 +155,8 @@ function balanceCard(summary, month) {
 // app.css (palette slots 6 and 7, validated: the donut already uses 1-5 on
 // this screen). No value axis: the difference row carries the figures, and a
 // tap on a month (or keyboard focus) writes its exact totals under the chart.
+// The meal vouchers of a month sit on top of its income column, in a lighter
+// green, so the part at the baseline is the money received.
 
 const wholeEuros = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 0, useGrouping: 'always' });
 
@@ -144,8 +177,14 @@ function shortMonth(month) {
   return new Date(year, number - 1, 1).toLocaleDateString('it-IT', { month: 'short' }).replace('.', '');
 }
 
+function describeIncomes(item, { none }) {
+  if (!item.income_count) return none;
+  const vouchers = item.voucher_cents ? `, di cui buoni pasto ${formatEuro(item.voucher_cents)}` : '';
+  return `${formatEuro(item.income_cents)}${vouchers}`;
+}
+
 function describeMonth(item) {
-  const incomes = item.income_count ? formatEuro(item.income_cents) : 'nessuna registrata';
+  const incomes = describeIncomes(item, { none: 'nessuna registrata' });
   const difference = item.income_count ? `, differenza ${formatSignedEuro(item.balance_cents)}` : '';
   return `${monthLabel(item.month)}: entrate ${incomes}, spese ${formatEuro(item.expense_cents)}${difference}`;
 }
@@ -164,6 +203,24 @@ function trendChart(trend) {
     return node;
   }
 
+  // Incomes: meal vouchers on top, the rest at the baseline, 2 px of card
+  // between the two. The parts share the column by flex-grow, so the gap
+  // never makes it taller than the scale says.
+  function incomeColumn(item) {
+    if (!item.voucher_cents) return bar('income', item.income_cents);
+    const stack = h('span', { class: 'trend-stack' });
+    stack.style.height = `max(5px, ${(item.income_cents / largest) * 100}%)`;
+    const part = (kind, cents) => {
+      const node = h('span', { class: `trend-bar is-${kind}` });
+      node.style.flex = `${cents} 1 0`;
+      return node;
+    };
+    stack.append(part('voucher', item.voucher_cents));
+    const money = item.income_cents - item.voucher_cents;
+    if (money > 0) stack.append(part('income', money));
+    return stack;
+  }
+
   const columns = trend.map((item) => {
     const difference = item.income_count
       ? h('span', { class: `trend-diff ${signClass(item.balance_cents)}` }, shortDifference(item.balance_cents))
@@ -173,7 +230,7 @@ function trendChart(trend) {
       onclick: () => select(item),
       onfocus: () => select(item),
     },
-    h('span', { class: 'trend-bars' }, bar('income', item.income_cents), bar('expense', item.expense_cents)),
+    h('span', { class: 'trend-bars' }, incomeColumn(item), bar('expense', item.expense_cents)),
     h('span', { class: 'trend-month' }, shortMonth(item.month)),
     difference);
   });
@@ -184,30 +241,41 @@ function trendChart(trend) {
       columns[index].setAttribute('aria-pressed', String(other === item));
     });
     readoutMonth.textContent = monthLabel(item.month);
-    readoutValues.textContent = `${item.income_count ? `Entrate ${formatEuro(item.income_cents)}` : 'Nessuna entrata'}`
+    readoutValues.textContent = (item.income_count ? `Entrate ${describeIncomes(item, {})}` : 'Nessuna entrata')
       + ` · Spese ${formatEuro(item.expense_cents)}`;
   }
   select(trend[trend.length - 1]); // the month on screen
 
+  // The voucher key only when the six months have any.
+  const voucherKey = trend.some((item) => item.voucher_cents)
+    ? h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-voucher' }), 'di cui buoni')
+    : null;
   return h('figure', { class: 'card trend', 'aria-label': `Entrate e spese degli ultimi ${trend.length} mesi` },
     h('figcaption', { class: 'trend-head' },
       h('span', { class: 'trend-title' }, `Ultimi ${trend.length} mesi`),
       h('span', { class: 'trend-legend' },
         h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-income' }), 'Entrate'),
+        voucherKey,
         h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-expense' }), 'Spese'))),
     h('div', { class: 'trend-plot' }, columns),
     h('p', { class: 'trend-note' }, 'Sotto ogni mese: entrate meno spese.'),
     readout);
 }
 
-// "/riepilogo/categoria/3?mese=2026-10"; the month is left out when current.
+// Addresses of the summary screens; the month is left out when current.
+export function summaryPath(month) {
+  return month === currentMonth() ? '/riepilogo' : `/riepilogo?mese=${month}`;
+}
+
+// "/riepilogo/categoria/3?mese=2026-10"
 export function categoryPath(categoryId, month) {
   const base = `/riepilogo/categoria/${categoryId}`;
   return month === currentMonth() ? base : `${base}?mese=${month}`;
 }
 
-function summaryPath(month) {
-  return month === currentMonth() ? '/riepilogo' : `/riepilogo?mese=${month}`;
+// "/riepilogo/entrate?mese=2026-10"
+export function incomeSummaryPath(month) {
+  return month === currentMonth() ? '/riepilogo/entrate' : `/riepilogo/entrate?mese=${month}`;
 }
 
 export async function mount(root, ctx) {
@@ -257,7 +325,7 @@ export async function mount(root, ctx) {
     const largest = summary.by_category[0].total_cents;
     body.replaceChildren(
       ...parts,
-      donut(summary),
+      donut(summary, 'Spese del mese per categoria', EXPENSE_SLICES),
       h('h2', { class: 'section-title' }, 'Spese per categoria'),
       h('ul', { class: 'card bars' }, summary.by_category.map((category) => {
         const fill = h('span', { class: 'bar-fill' });

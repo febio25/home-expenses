@@ -77,7 +77,8 @@ function expenseRow(expense, { showCategory = true } = {}) {
 // Total of the list, then one section per day (newest first) with its total.
 // items must be newest first; dateOf gives an item's date, row draws it and
 // count words the number ("3 spese"). Shared by expenses and incomes.
-export function dayList(items, { dateOf, row, count }) {
+// showTotal: false where the screen already shows the total above.
+export function dayList(items, { dateOf, row, count, showTotal = true }) {
   const sum = (list) => list.reduce((total, item) => total + item.amount_cents, 0);
   const groups = new Map(); // date -> items, insertion order = newest day first
   for (const item of items) {
@@ -85,10 +86,11 @@ export function dayList(items, { dateOf, row, count }) {
     if (!groups.has(date)) groups.set(date, []);
     groups.get(date).push(item);
   }
+  const total = h('p', { class: 'month-total' },
+    h('span', { class: 'month-total-amount' }, formatEuro(sum(items))),
+    h('span', { class: 'month-total-count' }, count(items.length)));
   return [
-    h('p', { class: 'month-total' },
-      h('span', { class: 'month-total-amount' }, formatEuro(sum(items))),
-      h('span', { class: 'month-total-count' }, count(items.length))),
+    ...(showTotal ? [total] : []), // the callers spread this into replaceChildren: no nulls
     ...Array.from(groups, ([date, dayItems]) => h('section', { class: 'day' },
       h('h2', { class: 'day-head' },
         h('span', {}, dayLabel(date)),
