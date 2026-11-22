@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import get_settings
+from .text import fold
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 # Tables of schema version 1: any backup of this app has them. Tables added
@@ -31,6 +32,8 @@ def connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=10, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # fold(): text without case and accents, for the search (0.9.0).
+    conn.create_function("fold", 1, fold, deterministic=True)
     return conn
 
 

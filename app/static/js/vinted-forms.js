@@ -5,7 +5,8 @@
 // (vinted-sell.js).
 
 import { h, todayIso, formatSignedEuro, PAYMENT_LABELS } from './ui.js';
-import { AMOUNT_SHAPE, summaryDate } from './expense-form.js';
+import { AMOUNT_SHAPE, summaryDate, merchantMatches } from './expense-form.js';
+import { loadMerchants } from './store.js';
 
 function segmented(options, current, onPick) {
   const group = h('div', { class: 'seg', role: 'group' });
@@ -95,8 +96,28 @@ export function purchaseFields({ users, me }) {
   const merchantInput = h('input', {
     class: 'input', id: 'purchase-merchant', type: 'text', autocomplete: 'off', autocapitalize: 'words',
     maxLength: 80, value: state.merchant, enterkeyhint: 'done', placeholder: 'Vinted, un mercatino…',
-    oninput: () => { state.merchant = merchantInput.value; details.refresh(); },
+    oninput: () => { state.merchant = merchantInput.value; renderSuggestions(); details.refresh(); },
+    onkeydown: (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); merchantInput.blur(); }
+    },
   });
+  // The merchants already used, as in "Nuova spesa" (0.9.0): one row that
+  // scrolls sideways, filtered while typing. The category stays Vinted.
+  let merchants = [];
+  const suggestions = h('div', { class: 'chips chips-scroll', 'aria-label': 'Esercenti già usati', hidden: true });
+  function renderSuggestions() {
+    suggestions.replaceChildren(...merchantMatches(merchants, state.merchant).map((merchant) => h('button', {
+      class: 'chip', type: 'button',
+      onclick: () => {
+        state.merchant = merchant.name;
+        merchantInput.value = merchant.name;
+        renderSuggestions();
+        details.refresh();
+      },
+    }, merchant.name)));
+    suggestions.hidden = suggestions.childElementCount === 0;
+  }
+  loadMerchants().then((list) => { merchants = list; renderSuggestions(); }).catch(() => {});
   const details = detailsBar({
     id: 'purchase-details',
     describe: () => {
@@ -119,7 +140,7 @@ export function purchaseFields({ users, me }) {
       segmented(Object.entries(PAYMENT_LABELS).map(([value, label]) => ({ value, label })), state.method,
         (value) => { state.method = value; details.refresh(); }),
       h('p', { class: 'form-hint' }, 'Pagato con il saldo Vinted? Scegli «Altro».'),
-      h('label', { class: 'label', for: 'purchase-merchant' }, 'Dove l’hai comprato'), merchantInput,
+      h('label', { class: 'label', for: 'purchase-merchant' }, 'Dove l’hai comprato'), merchantInput, suggestions,
     ],
   });
   return {

@@ -12,6 +12,7 @@ from ..db import get_db, utc_now
 from ..money import AmountError, parse_amount
 from ..schemas import ExpenseCreate, ExpenseOut, ExpenseUpdate
 from ..security import current_user
+from ..text import MAX_QUERY_LENGTH, clean_query, search_clause
 from .merchants import get_or_create_merchant, prune_merchant
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
@@ -76,6 +77,11 @@ def list_expenses(
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
     category_id: int | None = Query(None, description="Only expenses of this category"),
+    q: str | None = Query(
+        None, max_length=MAX_QUERY_LENGTH,
+        description="Text to find in merchant, note, category or linked Vinted item, "
+        "without case or accents; or an amount (\"12,50\")",
+    ),
     user: sqlite3.Row = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
@@ -83,12 +89,23 @@ def list_expenses(
 
     With ``category_id``, only that category (used by the summary to show
     what makes up a category total). An unknown id gives an empty list.
+    With ``q`` (0.9.0), only the expenses that match it: the search of
+    "Movimenti", over every month unless a range is given too.
     """
     start, end = resolve_range(month, date_from, date_to)
     where, params = range_filter(start, end)
+    conditions = [where.removeprefix(" WHERE ")] if where else []
     if category_id is not None:
-        where = f"{where} AND e.category_id = ?" if where else " WHERE e.category_id = ?"
+        conditions.append("e.category_id = ?")
         params.append(category_id)
+    text = clean_query(q)
+    if text:
+        clause, clause_params = search_clause(
+            text, ["m.name", "e.note", "c.name", "v.title"], "e.amount_cents"
+        )
+        conditions.append(clause)
+        params.extend(clause_params)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = db.execute(
         f"{EXPENSE_SELECT}{where} ORDER BY e.expense_date DESC, e.id DESC", params
     ).fetchall()

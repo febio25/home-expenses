@@ -12,6 +12,24 @@ function normalize(text) {
   return text.trim().replace(/\s+/g, ' ').toLocaleLowerCase('it-IT');
 }
 
+// The merchants to suggest for what is typed: the most used ones when
+// nothing is, otherwise those starting with it, then those containing it.
+// The one already typed in full is left out. Also used by the purchase of
+// a Vinted item (vinted-forms.js, 0.9.0).
+export function merchantMatches(merchants, typed, max = MAX_SUGGESTIONS) {
+  const query = normalize(typed);
+  if (!query) return merchants.slice(0, max); // most used first
+  const starts = [];
+  const contains = [];
+  for (const merchant of merchants) {
+    const name = normalize(merchant.name);
+    if (name === query) continue; // already typed in full
+    if (name.startsWith(query)) starts.push(merchant);
+    else if (name.includes(query)) contains.push(merchant);
+  }
+  return [...starts, ...contains].slice(0, max);
+}
+
 // The date part of a details summary as [lead-in, bold value]:
 //   expense:   "Oggi", "Ieri", "Il 5 nov", "L'8 nov", "Il 5 nov 2025"
 //   recurring: "Da oggi", "Dal 5 nov", "Dall'8 nov"
@@ -113,22 +131,8 @@ export function createExpenseForm({
     renderCategories();
   }
 
-  function matchingMerchants() {
-    const query = normalize(state.merchant);
-    if (!query) return merchants.slice(0, MAX_SUGGESTIONS); // most used first
-    const starts = [];
-    const contains = [];
-    for (const merchant of merchants) {
-      const name = normalize(merchant.name);
-      if (name === query) continue; // already typed in full
-      if (name.startsWith(query)) starts.push(merchant);
-      else if (name.includes(query)) contains.push(merchant);
-    }
-    return [...starts, ...contains].slice(0, MAX_SUGGESTIONS);
-  }
-
   function renderSuggestions() {
-    suggestions.replaceChildren(...matchingMerchants().map((merchant) => h('button', {
+    suggestions.replaceChildren(...merchantMatches(merchants, state.merchant).map((merchant) => h('button', {
       class: 'chip', type: 'button',
       onclick: () => {
         state.merchant = merchant.name;

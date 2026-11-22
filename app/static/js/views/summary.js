@@ -10,6 +10,7 @@ import {
   h, mainHead, formatEuro, formatSignedEuro, formatShare, monthLabel, currentMonth, loadingBlock, errorBlock,
 } from '../ui.js';
 import { monthSwitcher, monthFromQuery } from './movements.js';
+import { explorePath } from './explore.js';
 
 const TREND_MONTHS = 6;
 
@@ -206,7 +207,8 @@ function describeMonth(item, words) {
   return `${monthLabel(item.month)}: ${words.incomeWord} ${incomes}, spese ${formatEuro(item.expense_cents)}${difference}`;
 }
 
-export function trendChart(trend, words = HOUSEHOLD_TREND) {
+// explore: the address of "Esplora" (0.9.0), linked at the bottom of the card.
+export function trendChart(trend, words = HOUSEHOLD_TREND, { explore = null } = {}) {
   const largest = Math.max(1, ...trend.map((item) => Math.max(item.income_cents, item.expense_cents)));
   const readoutMonth = h('strong', { class: 'trend-readout-month' });
   const readoutValues = h('span', { class: 'trend-readout-values' });
@@ -276,7 +278,19 @@ export function trendChart(trend, words = HOUSEHOLD_TREND) {
         h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-expense' }), words.expense))),
     h('div', { class: 'trend-plot' }, columns),
     h('p', { class: 'trend-note' }, words.note),
-    readout);
+    readout,
+    explore ? exploreLink(explore) : null);
+}
+
+// "Esplora ›" (0.9.0): the totals of a month, a year, six months or two
+// dates. At the bottom of the chart card, or in a card of its own when the
+// chart is left out (six empty months).
+export function exploreLink(href) {
+  return h('a', { class: 'trend-explore', href, dataset: { link: '' } },
+    h('span', { class: 'trend-explore-main' },
+      h('span', { class: 'trend-explore-name' }, 'Esplora'),
+      h('span', { class: 'trend-explore-meta' }, 'Totali di un mese, un anno, 6 mesi o delle date che scegli')),
+    h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›'));
 }
 
 // Addresses of the summary screens; the month is left out when current.
@@ -332,8 +346,14 @@ export async function mount(root, ctx) {
         h('span', { class: 'receipt-sub' }, summary.expense_count ? expenseCount : 'Nessuna spesa')),
       balanceCard(summary, month),
     ];
-    // The chart is left out only when the six months are all empty.
-    if (trend.some((item) => item.expense_count || item.income_count)) parts.push(trendChart(trend));
+    // The chart is left out only when the six months are all empty; the
+    // link to "Esplora" stays, for the periods before them.
+    const explore = explorePath('house', month);
+    if (trend.some((item) => item.expense_count || item.income_count)) {
+      parts.push(trendChart(trend, HOUSEHOLD_TREND, { explore }));
+    } else {
+      parts.push(h('div', { class: 'card explore-card' }, exploreLink(explore)));
+    }
     if (summary.expense_count === 0) {
       body.replaceChildren(...parts);
       return;

@@ -1,14 +1,20 @@
 // "Movimenti → Entrate": the month's incomes (salaries, refunds, gifts...),
 // newest first and grouped by day like the expenses. Same tab as the
 // expense list: the switch at the top moves between the two, on the same
-// month. "Nuova entrata" sits at the bottom, in reach of the thumb.
+// month. "Nuova entrata" sits at the bottom, in reach of the thumb. The
+// search box (0.9.0) looks through every month, as for the expenses.
 
 import { api } from '../api.js';
 import { state } from '../store.js';
 import {
-  h, mainHead, formatEuro, monthLabel, currentMonth, todayIso, loadingBlock, errorBlock,
+  h, mainHead, formatEuro, monthLabel, dayMonthShort, currentMonth, todayIso, loadingBlock, errorBlock,
 } from '../ui.js';
-import { monthSwitcher, monthFromQuery, movementsSwitch, incomesPath, dayList, vintedLine } from './movements.js';
+import {
+  monthSwitcher, monthFromQuery, movementsSwitch, incomesPath, dayList, vintedLine,
+  searchFromQuery, withSearch, searchBox, searchResults, noResults,
+} from './movements.js';
+
+const countIncomes = (number) => (number === 1 ? '1 entrata' : `${number} entrate`);
 
 // From the list of a past month, a new income starts in that month.
 export function newIncomePath(month) {
@@ -17,12 +23,14 @@ export function newIncomePath(month) {
 
 // Shared with the incomes summary (summary-incomes.js).
 // The sale of a Vinted item opens the item (see vintedLine).
-export function incomeRow(income) {
+// showDate: in the search results, grouped by month.
+export function incomeRow(income, { showDate = false } = {}) {
   const href = income.vinted_item_id ? `/vinted/articolo/${income.vinted_item_id}` : `/entrate/${income.id}`;
+  const meta = showDate ? `${dayMonthShort(income.income_date)} · ${income.received_by_name}` : income.received_by_name;
   return h('a', { class: 'row', href, dataset: { link: '' } },
     h('span', { class: 'row-main' },
       h('span', { class: 'row-title' }, income.category_name),
-      h('span', { class: 'row-meta' }, income.received_by_name),
+      h('span', { class: 'row-meta' }, meta),
       income.vinted_item_id ? vintedLine(income.vinted_item_title) : null,
       income.note ? h('span', { class: 'row-note' }, income.note) : null),
     h('span', { class: 'row-amount' }, formatEuro(income.amount_cents)));
@@ -30,7 +38,17 @@ export function incomeRow(income) {
 
 export async function mount(root, ctx) {
   let month = monthFromQuery(ctx.query);
+  let search = searchFromQuery(ctx.query);
+  let request = 0; // the latest load wins
   const tabSlot = h('div');
+  const searchSlot = searchBox({
+    id: 'income-search', label: 'Cerca nelle entrate', initial: search,
+    onChange: (text) => {
+      if (text === search) return;
+      search = text;
+      show(month);
+    },
+  });
   const switcherSlot = h('div');
   const body = h('div');
   const addLink = h('a', { class: 'btn btn-primary btn-block', dataset: { link: '' } }, 'Nuova entrata');
@@ -50,25 +68,40 @@ export async function mount(root, ctx) {
   }
   root.append(
     mainHead('Movimenti', state.me.display_name),
-    tabSlot, dueBanner, switcherSlot, body,
+    tabSlot, searchSlot, dueBanner, switcherSlot, body,
     h('div', { class: 'footer-bar' }, addLink));
 
   // quiet: see the same option in movements.js.
   async function show(nextMonth, { quiet = false } = {}) {
     month = nextMonth;
-    history.replaceState(history.state, '', incomesPath(month));
+    const mine = ++request;
+    history.replaceState(history.state, '', withSearch(incomesPath(month), search));
     tabSlot.replaceChildren(movementsSwitch('incomes', month, ctx.navigate));
     switcherSlot.replaceChildren(monthSwitcher(month, show));
+    switcherSlot.hidden = Boolean(search); // a search looks at every month
     addLink.href = newIncomePath(month);
     if (!quiet) body.replaceChildren(loadingBlock());
+    const text = search;
     let incomes;
     try {
-      incomes = await api.get(`/incomes?month=${month}`);
+      incomes = await api.get(text ? `/incomes?q=${encodeURIComponent(text)}` : `/incomes?month=${month}`);
     } catch (error) {
-      if (!quiet && ctx.isCurrent() && month === nextMonth) body.replaceChildren(errorBlock(error, () => show(month)));
+      if (!quiet && ctx.isCurrent() && mine === request) body.replaceChildren(errorBlock(error, () => show(month)));
       return;
     }
-    if (!ctx.isCurrent() || month !== nextMonth) return; // a newer request took over
+    if (!ctx.isCurrent() || mine !== request) return; // a newer request took over
+
+    if (text) {
+      body.replaceChildren(...(incomes.length
+        ? searchResults(incomes, {
+          dateOf: (income) => income.income_date,
+          row: (income) => incomeRow(income, { showDate: true }),
+          count: countIncomes,
+        })
+        : [noResults(`Nessuna entrata trovata per «${text}»`,
+          'La ricerca guarda categoria, nota e importo (per esempio 1850), in tutti i mesi.')]));
+      return;
+    }
 
     if (incomes.length === 0) {
       body.replaceChildren(h('div', { class: 'empty' },
@@ -83,8 +116,8 @@ export async function mount(root, ctx) {
     }
     body.replaceChildren(...dayList(incomes, {
       dateOf: (income) => income.income_date,
-      row: incomeRow,
-      count: (number) => (number === 1 ? '1 entrata' : `${number} entrate`),
+      row: (income) => incomeRow(income),
+      count: countIncomes,
     }));
   }
 

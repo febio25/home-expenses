@@ -10,9 +10,9 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..dates import add_months, month_bounds
+from ..dates import add_months, month_bounds, resolve_range
 from ..db import get_db
-from ..schemas import INCOME_CATEGORIES, IncomeSummaryOut, MonthTotals, SummaryOut
+from ..schemas import INCOME_CATEGORIES, IncomeSummaryOut, MonthTotals, PeriodTotalsOut, SummaryOut
 from ..security import current_user
 
 router = APIRouter(prefix="/summary", tags=["summary"], dependencies=[Depends(current_user)])
@@ -84,6 +84,40 @@ def income_summary(
         "total_cents": sum(row["total_cents"] for row in by_category),
         "income_count": sum(row["income_count"] for row in by_category),
         "by_category": by_category,
+    }
+
+
+@router.get("/period", response_model=PeriodTotalsOut)
+def period_summary(
+    date_from: date = Query(..., alias="from", description="First day, YYYY-MM-DD"),
+    date_to: date = Query(..., alias="to", description="Last day, YYYY-MM-DD, included"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Incomes, expenses and their difference over any period: a month, a
+    year, the last six months or two dates of one's choice ("Esplora",
+    0.9.0). Only totals: no categories, no list."""
+    start, end = resolve_range(None, date_from, date_to)
+    window = (start.isoformat(), end.isoformat())
+    spent = db.execute(
+        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count"
+        "  FROM expenses WHERE expense_date >= ? AND expense_date <= ?",
+        window,
+    ).fetchone()
+    income = db.execute(
+        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count,"
+        "       COALESCE(SUM(CASE WHEN category = ? THEN amount_cents END), 0) AS vouchers"
+        "  FROM incomes WHERE income_date >= ? AND income_date <= ?",
+        (VOUCHER_CATEGORY, *window),
+    ).fetchone()
+    return {
+        "start": start,
+        "end": end,
+        "income_cents": income["cents"],
+        "income_count": income["count"],
+        "voucher_cents": income["vouchers"],
+        "expense_cents": spent["cents"],
+        "expense_count": spent["count"],
+        "balance_cents": income["cents"] - spent["cents"],
     }
 
 

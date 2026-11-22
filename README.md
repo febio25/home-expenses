@@ -13,6 +13,12 @@ esposta su internet.
 - Data, «pagato da», metodo di pagamento e nota hanno valori predefiniti
   (oggi, chi è collegato, carta) e si cambiano con un tocco.
 - Lista dei movimenti per mese, con modifica ed eliminazione.
+- Ricerca nei movimenti (dalla 0.9.0): la barra sotto «Spese | Entrate» cerca
+  in tutti i mesi, senza badare a maiuscole e accenti, in esercente, nota,
+  categoria, importo («12,50») e titolo dell'articolo Vinted collegato (per
+  le entrate: categoria, nota, importo e articolo). I risultati sono
+  raggruppati per mese, con totale e numero; una spesa si apre come sempre e
+  Indietro torna ai risultati. La × torna alla lista del mese.
 - Entrate (stipendi, rimborsi, regali, vendite, buoni pasto), separate dalle
   spese: in *Movimenti* l'interruttore «Spese | Entrate» passa da una lista
   all'altra, e «Nuova entrata» le registra con importo, categoria da una
@@ -23,6 +29,12 @@ esposta su internet.
   per categoria. Toccando una categoria si vedono le spese che la compongono;
   toccando *Entrate* si vedono le entrate del mese per categoria (ciambella e
   totali) e la loro lista.
+- *Esplora* (dalla 0.9.0), dal link sotto l'istogramma: i totali di un mese,
+  di un anno, degli ultimi 6 mesi o di due date a scelta, con le frecce per
+  andare avanti e indietro. Solo totali (entrate, spese con i buoni pasto in
+  evidenza, differenza) e le date di riferimento: niente movimenti né
+  categorie. C'è anche per Vinted, con vendite, spese Vinted, differenza e
+  guadagno sugli articoli venduti nel periodo.
 - Buoni pasto: si registrano come entrata della categoria *Buoni pasto*
   (per esempio il totale caricato nel mese, anche come entrata ricorrente),
   mentre gli acquisti pagati con i buoni restano normali spese, per intero.
@@ -309,14 +321,14 @@ ricarica la pagina una volta e riprova.
 
 ### Su Umbrel
 
-Esempio con la versione `0.8.0`.
+Esempio con la versione `0.9.0`.
 
 1. Nel repository `home-expenses` la versione in `app/__init__.py`
    (`__version__`) deve essere quella nuova. Fai commit e push.
 2. Crea e invia il tag:
 
    ```bash
-   git tag v0.8.0 && git push origin v0.8.0
+   git tag v0.9.0 && git push origin v0.9.0
    ```
 
 3. Quando in **Actions** l'esecuzione «Release image» è finita in verde
@@ -324,7 +336,7 @@ Esempio con la versione `0.8.0`.
 
    ```bash
    TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:febio25/home-expenses:pull" | sed -E 's/.*"token":"([^"]+)".*/\1/')
-   DIGEST=$(curl -sI -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json" https://ghcr.io/v2/febio25/home-expenses/manifests/0.8.0 | grep -i docker-content-digest | awk '{print $2}' | tr -d '\r')
+   DIGEST=$(curl -sI -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json" https://ghcr.io/v2/febio25/home-expenses/manifests/0.9.0 | grep -i docker-content-digest | awk '{print $2}' | tr -d '\r')
    echo "$DIGEST"
    ```
 
@@ -338,7 +350,7 @@ Esempio con la versione `0.8.0`.
 
    ```bash
    cd umbrel-app-store
-   LINE="image: ghcr.io/febio25/home-expenses:0.8.0@${DIGEST}"
+   LINE="image: ghcr.io/febio25/home-expenses:0.9.0@${DIGEST}"
    sed -i '' "s|^    image: ghcr.io/febio25/home-expenses:.*|    ${LINE}|" tallynest-expenses/docker-compose.yml
    grep -n -A1 "image:" tallynest-expenses/docker-compose.yml
    ```
@@ -557,7 +569,12 @@ CDN.
   stesso valore non crea doppioni.
 - `GET /api/v1/expenses` filtra per `month=AAAA-MM` (oppure `from` e `to`) e
   per `category_id`: per esempio `?month=2026-11&category_id=3` restituisce
-  le spese che compongono quel totale del riepilogo.
+  le spese che compongono quel totale del riepilogo. Dalla 0.9.0 anche `q`
+  (al massimo 80 caratteri): testo cercato senza maiuscole né accenti in
+  esercente, nota, categoria e titolo dell'articolo Vinted collegato, oppure
+  un importo esatto («12,50»); combinabile con gli altri filtri, senza di
+  loro cerca in tutti i mesi. `GET /api/v1/incomes` accetta lo stesso `q`
+  (categoria, nota, articolo, importo).
 - Spese ricorrenti: `GET/POST /api/v1/recurring`, `PATCH/DELETE
   /api/v1/recurring/{id}`, `POST /api/v1/recurring/{id}/register` (crea la spesa
   e sposta la scadenza) e `POST /api/v1/recurring/{id}/skip`. Entrambe chiedono
@@ -583,6 +600,10 @@ CDN.
   `by_category`, dalla più grande). `GET /api/v1/summary/trend?month=AAAA-MM&months=6`
   restituisce i totali di entrate (con `voucher_cents`) e spese di ogni mese
   della finestra (da 1 a 24 mesi, il più vecchio per primo), anche quelli vuoti.
+  `GET /api/v1/summary/period?from=AAAA-MM-GG&to=AAAA-MM-GG` (0.9.0, per
+  *Esplora*) restituisce i totali di un periodo qualsiasi, estremi compresi:
+  `income_cents`, `income_count`, `voucher_cents`, `expense_cents`,
+  `expense_count`, `balance_cents`.
 - Vinted (0.8.0), sotto `/api/v1/vinted`: `GET/POST /items` (filtro
   `status`: `listed`, `sold`, `withdrawn`; `client_uuid` come per le spese),
   `GET/PATCH/DELETE /items/{id}` (la PATCH cambia titolo, nota e ritiro;
@@ -593,7 +614,9 @@ CDN.
   l'entrata), `PUT/DELETE /items/{id}/photo` (JPEG in base64, già ridotto
   dal client) e `GET /items/{id}/photo` e `/photo/thumb`, `GET
   /unlinked-expenses` e `/unlinked-incomes` (cosa si può collegare), `GET
-  /summary?month=AAAA-MM` e `/summary/trend?month=AAAA-MM&months=6`. Le
+  /summary?month=AAAA-MM`, `/summary/trend?month=AAAA-MM&months=6` e, dalla
+  0.9.0, `/summary/period?from=&to=` (le cifre del riepilogo del mese su un
+  periodo qualsiasi). Le
   spese e le entrate collegate riportano `vinted_item_id` e
   `vinted_item_title`; la loro categoria non si può cambiare. Le categorie
   hanno `system_key` (`vinted` per quella della sezione, altrimenti `null`).
@@ -624,6 +647,7 @@ app/
   db.py            connessioni SQLite e migrazioni
   security.py      password (scrypt), sessioni, autenticazione
   money.py         conversione degli importi in centesimi
+  text.py          ricerca: testo senza maiuscole e accenti
   dates.py         intervalli di date
   schemas.py       modelli JSON dell'API
   migrations/      schema del database (file SQL numerati)

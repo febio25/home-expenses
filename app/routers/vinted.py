@@ -20,7 +20,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from .. import dates
-from ..dates import check_expense_date, month_bounds
+from ..dates import check_expense_date, month_bounds, resolve_range
 from ..db import get_db, utc_now
 from ..schemas import (
     ExpenseCreate,
@@ -31,6 +31,7 @@ from ..schemas import (
     VintedItemCreate,
     VintedItemOut,
     VintedItemUpdate,
+    VintedPeriodOut,
     VintedPhotoIn,
     VintedPurchaseIn,
     VintedSaleIn,
@@ -572,16 +573,9 @@ def unlinked_incomes(
 # --- summary ---------------------------------------------------------------------
 
 
-@router.get("/summary", response_model=VintedSummaryOut)
-def vinted_summary(
-    month: str = Query(..., description="YYYY-MM"),
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    """The month of the section: sales, Vinted expenses (purchases and
-    extras) and their difference; the items sold in the month with what
-    they cost; the sales of the calendar year, for the DAC7 thresholds."""
-    start, end = month_bounds(month)
+def _section_totals(db: sqlite3.Connection, start: date, end: date) -> dict:
+    """Sales, Vinted expenses (purchases and extras) and their difference
+    between two dates; the items sold in them, with what they cost."""
     window = (start.isoformat(), end.isoformat())
     sales = db.execute(
         "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count FROM incomes"
@@ -606,14 +600,7 @@ def vinted_summary(
         " WHERE i.income_date >= ? AND i.income_date <= ?",
         window,
     ).fetchone()
-    year = start.year
-    yearly = db.execute(
-        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count FROM incomes"
-        " WHERE category = ? AND income_date >= ? AND income_date <= ?",
-        (VINTED, f"{year:04d}-01-01", f"{year:04d}-12-31"),
-    ).fetchone()
     return {
-        "month": month,
         "sales_cents": sales["cents"],
         "sales_count": sales["count"],
         "expense_cents": spent["cents"],
@@ -625,10 +612,45 @@ def vinted_summary(
         "sold_cents": sold["cents"],
         "sold_cost_cents": sold["cost"],
         "gain_cents": sold["cents"] - sold["cost"],
+    }
+
+
+@router.get("/summary", response_model=VintedSummaryOut)
+def vinted_summary(
+    month: str = Query(..., description="YYYY-MM"),
+    user: sqlite3.Row = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """The month of the section: sales, Vinted expenses (purchases and
+    extras) and their difference; the items sold in the month with what
+    they cost; the sales of the calendar year, for the DAC7 thresholds."""
+    start, end = month_bounds(month)
+    year = start.year
+    yearly = db.execute(
+        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count FROM incomes"
+        " WHERE category = ? AND income_date >= ? AND income_date <= ?",
+        (VINTED, f"{year:04d}-01-01", f"{year:04d}-12-31"),
+    ).fetchone()
+    return {
+        "month": month,
+        **_section_totals(db, start, end),
         "year": year,
         "year_sales_count": yearly["count"],
         "year_sales_cents": yearly["cents"],
     }
+
+
+@router.get("/summary/period", response_model=VintedPeriodOut)
+def vinted_period(
+    date_from: date = Query(..., alias="from", description="First day, YYYY-MM-DD"),
+    date_to: date = Query(..., alias="to", description="Last day, YYYY-MM-DD, included"),
+    user: sqlite3.Row = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """The section over any period ("Esplora", 0.9.0): the figures of the
+    month summary, between two dates."""
+    start, end = resolve_range(None, date_from, date_to)
+    return {"start": start, "end": end, **_section_totals(db, start, end)}
 
 
 @router.get("/summary/trend", response_model=list[MonthTotals])

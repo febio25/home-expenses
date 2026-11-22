@@ -7,7 +7,8 @@
 import { api } from '../api.js';
 import { h, formatEuro, formatSignedEuro, monthLabel, currentMonth, loadingBlock, errorBlock } from '../ui.js';
 import { monthSwitcher, monthFromQuery } from './movements.js';
-import { trendChart } from './summary.js';
+import { trendChart, exploreLink } from './summary.js';
+import { explorePath } from './explore.js';
 import { vintedHead } from './vinted.js';
 
 const TREND_MONTHS = 6;
@@ -122,8 +123,14 @@ export async function mount(root, ctx) {
         formatSignedEuro(summary.gain_cents), `balance-diff ${signClass(summary.gain_cents)}`)
       : row('Guadagno', 'Nessun articolo venduto nel mese', '–')));
 
-    // The chart is left out only when the six months are all empty.
-    if (trend.some((item) => item.income_count || item.expense_count)) parts.push(trendChart(trend, VINTED_TREND));
+    // The chart is left out only when the six months are all empty; the
+    // link to "Esplora" stays.
+    const explore = explorePath('vinted', month);
+    if (trend.some((item) => item.income_count || item.expense_count)) {
+      parts.push(trendChart(trend, VINTED_TREND, { explore }));
+    } else {
+      parts.push(h('div', { class: 'card explore-card' }, exploreLink(explore)));
+    }
     parts.push(...yearCard(summary));
     body.replaceChildren(...parts);
   }

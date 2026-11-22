@@ -16,6 +16,7 @@ from ..dates import check_expense_date, range_filter, resolve_range
 from ..db import get_db, utc_now
 from ..schemas import INCOME_CATEGORIES, IncomeCategoryOut, IncomeCreate, IncomeOut, IncomeUpdate
 from ..security import current_user
+from ..text import MAX_QUERY_LENGTH, clean_query, fold, search_clause
 from .expenses import _amount, _check_user, _clean_note
 
 router = APIRouter(prefix="/incomes", tags=["incomes"])
@@ -66,12 +67,30 @@ def list_incomes(
     month: str | None = Query(None, description="YYYY-MM; wins over from/to"),
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
+    q: str | None = Query(
+        None, max_length=MAX_QUERY_LENGTH,
+        description="Text to find in note, category or linked Vinted item, "
+        "without case or accents; or an amount (\"12,50\")",
+    ),
     user: sqlite3.Row = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Incomes in the range, newest first. Without parameters: all of them."""
+    """Incomes in the range, newest first. Without parameters: all of them.
+    With ``q`` (0.9.0), only the incomes that match it (see GET /expenses)."""
     start, end = resolve_range(month, date_from, date_to)
     where, params = range_filter(start, end, column="i.income_date")
+    conditions = [where.removeprefix(" WHERE ")] if where else []
+    text = clean_query(q)
+    if text:
+        clause, clause_params = search_clause(text, ["i.note", "v.title"], "i.amount_cents")
+        # Categories are codes with an Italian name: match the names here.
+        codes = [code for code, name in INCOME_CATEGORIES.items() if fold(text) in fold(name)]
+        if codes:
+            clause = f"({clause[1:-1]} OR i.category IN ({', '.join('?' * len(codes))}))"
+            clause_params.extend(codes)
+        conditions.append(clause)
+        params.extend(clause_params)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = db.execute(
         f"{INCOME_SELECT}{where} ORDER BY i.income_date DESC, i.id DESC", params
     ).fetchall()

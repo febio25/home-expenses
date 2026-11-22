@@ -361,6 +361,19 @@ class MonthTotals(BaseModel):
     balance_cents: int = Field(description="income_cents - expense_cents; may be negative")
 
 
+class PeriodTotalsOut(BaseModel):
+    """GET /summary/period (0.9.0): the totals of any period, for "Esplora"."""
+
+    start: date
+    end: date
+    income_cents: int
+    income_count: int
+    voucher_cents: int = Field(description="Part of income_cents in the category meal_voucher")
+    expense_cents: int
+    expense_count: int
+    balance_cents: int = Field(description="income_cents - expense_cents; may be negative")
+
+
 class IncomeCategoryTotal(BaseModel):
     category: str
     category_name: str
@@ -493,6 +506,25 @@ class VintedSummaryOut(BaseModel):
     year: int
     year_sales_count: int = Field(description="Vinted incomes of the calendar year (DAC7: 30 sales)")
     year_sales_cents: int = Field(description="Their total (DAC7: 2,000 EUR)")
+
+
+class VintedPeriodOut(BaseModel):
+    """GET /vinted/summary/period (0.9.0): the section over any period, for
+    "Esplora": the same figures as the month summary, without the year."""
+
+    start: date
+    end: date
+    sales_cents: int = Field(description="Incomes of the period in the category vinted")
+    sales_count: int
+    expense_cents: int = Field(description="Expenses of the period in the Vinted category")
+    expense_count: int
+    purchase_count: int
+    extra_count: int
+    balance_cents: int = Field(description="sales_cents - expense_cents; may be negative")
+    sold_count: int = Field(description="Items whose sale falls in the period")
+    sold_cents: int
+    sold_cost_cents: int
+    gain_cents: int = Field(description="sold_cents - sold_cost_cents")
 
 
 class MessageOut(BaseModel):

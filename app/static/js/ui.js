@@ -140,6 +140,11 @@ export function shortDate(iso) {
   return parseIso(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+// "10 nov": the day of a row in the search results, under a month heading.
+export function dayMonthShort(iso) {
+  return parseIso(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+}
+
 export const PAYMENT_LABELS = { card: 'Carta', cash: 'Contanti', other: 'Altro' };
 
 // --- toasts ---------------------------------------------------------------

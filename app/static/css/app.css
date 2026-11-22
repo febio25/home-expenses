@@ -663,6 +663,50 @@ dialog.viewer::backdrop { background: rgb(20 37 31 / 0.6); }
 .dialog-option-meta { color: var(--muted); font-size: 0.8125rem; }
 .dialog-option-amount { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
+/* --- 0.9.0: search in Movimenti ----------------------------------------------- */
+.search-movements { margin-bottom: 12px; }
+.search-movements.has-text > .input { padding-right: 48px; }
+.search-clear {
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 44px; height: 44px;
+  border: 0; border-radius: 50%; background: transparent; color: var(--muted);
+}
+.search-clear:active { background: var(--primary-soft); }
+.search-scope { color: var(--muted); font-size: 0.8125rem; margin: 0 0 2px; }
+
+/* --- 0.9.0: "Esplora", the totals of a period ----------------------------------- */
+/* link at the bottom of the six-month chart */
+.trend-explore {
+  display: flex; align-items: center; gap: 12px;
+  margin: 10px -10px -12px; padding: 12px 14px; min-height: 56px;
+  border-top: 1px solid var(--line); color: inherit; text-decoration: none;
+}
+.trend-explore:active { background: var(--primary-soft); }
+.trend-explore-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.trend-explore-name { font-weight: 650; color: var(--primary); }
+.trend-explore-meta { color: var(--muted); font-size: 0.8125rem; }
+.explore-card { margin-top: 12px; overflow: hidden; }
+.explore-card > .trend-explore { margin: 0; border-top: 0; }
+/* the screen */
+.period-dates { text-align: center; color: var(--muted); font-size: 0.875rem; margin: -2px 0 12px; }
+.period-range { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-bottom: 10px; }
+.period-range .label { margin-top: 0; }
+.period-range .input { font-variant-numeric: tabular-nums; min-width: 0; }
+.cumul { margin: 0; padding: 2px 14px; }
+.cumul-row { padding: 12px 0; }
+.cumul-row + .cumul-row { border-top: 1px solid var(--line); }
+.cumul-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.cumul-name { font-weight: 650; }
+.cumul-amount { font-weight: 750; font-size: 1.125rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cumul-track { display: flex; height: 18px; margin: 8px 0 6px; background: var(--paper); border-radius: 6px; overflow: hidden; }
+.cumul-fill { display: flex; gap: 2px; height: 100%; border-radius: 6px; overflow: hidden; }
+.cumul-part { display: block; height: 100%; min-width: 2px; }
+/* the colors of the six-month chart (see .trend-bar) */
+.cumul-part.is-income { background: #008300; flex: 1; }
+.cumul-part.is-voucher { background: #0ca30c; }
+.cumul-part.is-expense { background: #6250d6; flex: 1; }
+.cumul-meta { display: block; color: var(--muted); font-size: 0.8125rem; }
+
 @media (prefers-reduced-motion: reduce) {
   .btn-save.is-saved { animation: none; }
 }
