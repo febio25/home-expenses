@@ -5,8 +5,9 @@
 // "Entrate" row opens the incomes of the month (summary-incomes.js).
 
 import { api } from '../api.js';
+import { state } from '../store.js';
 import {
-  h, formatEuro, formatSignedEuro, formatShare, monthLabel, currentMonth, loadingBlock, errorBlock,
+  h, mainHead, formatEuro, formatSignedEuro, formatShare, monthLabel, currentMonth, loadingBlock, errorBlock,
 } from '../ui.js';
 import { monthSwitcher, monthFromQuery } from './movements.js';
 
@@ -183,13 +184,29 @@ function describeIncomes(item, { none }) {
   return `${formatEuro(item.income_cents)}${vouchers}`;
 }
 
-function describeMonth(item) {
-  const incomes = describeIncomes(item, { none: 'nessuna registrata' });
-  const difference = item.income_count ? `, differenza ${formatSignedEuro(item.balance_cents)}` : '';
-  return `${monthLabel(item.month)}: entrate ${incomes}, spese ${formatEuro(item.expense_cents)}${difference}`;
+// The words of the chart. The household one: incomes and expenses, and a
+// month without incomes shows no difference ("–"): minus the expenses would
+// look like a deficit that is not there. The Vinted section (0.8.0) passes
+// its own: sales and Vinted expenses, and a month with only purchases does
+// have a negative difference.
+export const HOUSEHOLD_TREND = {
+  title: 'Entrate e spese',
+  income: 'Entrate',
+  expense: 'Spese',
+  noIncome: 'Nessuna entrata',
+  incomeWord: 'entrate',
+  noIncomeAria: 'nessuna registrata',
+  note: 'Sotto ogni mese: entrate meno spese.',
+  hasDifference: (item) => item.income_count > 0,
+};
+
+function describeMonth(item, words) {
+  const incomes = describeIncomes(item, { none: words.noIncomeAria });
+  const difference = words.hasDifference(item) ? `, differenza ${formatSignedEuro(item.balance_cents)}` : '';
+  return `${monthLabel(item.month)}: ${words.incomeWord} ${incomes}, spese ${formatEuro(item.expense_cents)}${difference}`;
 }
 
-function trendChart(trend) {
+export function trendChart(trend, words = HOUSEHOLD_TREND) {
   const largest = Math.max(1, ...trend.map((item) => Math.max(item.income_cents, item.expense_cents)));
   const readoutMonth = h('strong', { class: 'trend-readout-month' });
   const readoutValues = h('span', { class: 'trend-readout-values' });
@@ -222,11 +239,11 @@ function trendChart(trend) {
   }
 
   const columns = trend.map((item) => {
-    const difference = item.income_count
+    const difference = words.hasDifference(item)
       ? h('span', { class: `trend-diff ${signClass(item.balance_cents)}` }, shortDifference(item.balance_cents))
       : h('span', { class: 'trend-diff is-none' }, '–');
     return h('button', {
-      class: 'trend-col', type: 'button', 'aria-pressed': 'false', 'aria-label': describeMonth(item),
+      class: 'trend-col', type: 'button', 'aria-pressed': 'false', 'aria-label': describeMonth(item, words),
       onclick: () => select(item),
       onfocus: () => select(item),
     },
@@ -241,8 +258,8 @@ function trendChart(trend) {
       columns[index].setAttribute('aria-pressed', String(other === item));
     });
     readoutMonth.textContent = monthLabel(item.month);
-    readoutValues.textContent = (item.income_count ? `Entrate ${describeIncomes(item, {})}` : 'Nessuna entrata')
-      + ` · Spese ${formatEuro(item.expense_cents)}`;
+    readoutValues.textContent = (item.income_count ? `${words.income} ${describeIncomes(item, {})}` : words.noIncome)
+      + ` · ${words.expense} ${formatEuro(item.expense_cents)}`;
   }
   select(trend[trend.length - 1]); // the month on screen
 
@@ -250,15 +267,15 @@ function trendChart(trend) {
   const voucherKey = trend.some((item) => item.voucher_cents)
     ? h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-voucher' }), 'di cui buoni')
     : null;
-  return h('figure', { class: 'card trend', 'aria-label': `Entrate e spese degli ultimi ${trend.length} mesi` },
+  return h('figure', { class: 'card trend', 'aria-label': `${words.title} degli ultimi ${trend.length} mesi` },
     h('figcaption', { class: 'trend-head' },
       h('span', { class: 'trend-title' }, `Ultimi ${trend.length} mesi`),
       h('span', { class: 'trend-legend' },
-        h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-income' }), 'Entrate'),
+        h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-income' }), words.income),
         voucherKey,
-        h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-expense' }), 'Spese'))),
+        h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-expense' }), words.expense))),
     h('div', { class: 'trend-plot' }, columns),
-    h('p', { class: 'trend-note' }, 'Sotto ogni mese: entrate meno spese.'),
+    h('p', { class: 'trend-note' }, words.note),
     readout);
 }
 
@@ -285,7 +302,7 @@ export async function mount(root, ctx) {
   const switcherSlot = h('div');
   const body = h('div');
   root.append(
-    h('header', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Riepilogo')),
+    mainHead('Riepilogo', state.me.display_name),
     switcherSlot, body);
 
   // quiet: see the same option in movements.js.

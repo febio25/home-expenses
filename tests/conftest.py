@@ -61,6 +61,16 @@ def categories(client):
     return {c["name"]: c["id"] for c in client.get("/api/v1/categories").json()}
 
 
+def strip_vinted_schema(conn):
+    """Undo migration 005 on a copy of a backup, to simulate one made before
+    0.8.0. The "Vinted" category row stays: the migration adopts it again by
+    name, as it does with a category created by hand."""
+    conn.execute("DROP TABLE vinted_photos")
+    conn.execute("DROP TABLE vinted_items")
+    conn.execute("DROP INDEX idx_categories_system_key")
+    conn.execute("ALTER TABLE categories DROP COLUMN system_key")
+
+
 def make_expense(client, categories, **overrides):
     body = {
         "amount": "12,50",

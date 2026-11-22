@@ -24,12 +24,14 @@ SELECT e.id, e.amount_cents, e.expense_date,
        e.paid_by_user_id, payer.display_name AS paid_by_name,
        e.payment_method,
        e.created_by_user_id, author.display_name AS created_by_name,
-       e.created_at, e.updated_at
+       e.created_at, e.updated_at,
+       v.id AS vinted_item_id, v.title AS vinted_item_title
   FROM expenses e
   JOIN categories c ON c.id = e.category_id
   LEFT JOIN merchants m ON m.id = e.merchant_id
   JOIN users payer ON payer.id = e.paid_by_user_id
   JOIN users author ON author.id = e.created_by_user_id
+  LEFT JOIN vinted_items v ON v.purchase_expense_id = e.id
 """
 
 
@@ -207,6 +209,14 @@ def update_expense(
         _check_category(
             db, body.category_id, must_be_active=body.category_id != current["category_id"]
         )
+        # The purchase of a Vinted item stays in the Vinted category, or it
+        # would drop out of the section's totals.
+        if current["vinted_item_id"] is not None and body.category_id != current["category_id"]:
+            raise HTTPException(
+                status_code=409,
+                detail=f"È l'acquisto dell'articolo Vinted «{current['vinted_item_title']}»: "
+                "la categoria resta Vinted.",
+            )
         changes["category_id"] = body.category_id
     if "expense_date" in sent:
         if body.expense_date is None:

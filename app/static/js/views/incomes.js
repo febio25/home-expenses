@@ -4,8 +4,11 @@
 // month. "Nuova entrata" sits at the bottom, in reach of the thumb.
 
 import { api } from '../api.js';
-import { h, formatEuro, monthLabel, currentMonth, todayIso, loadingBlock, errorBlock } from '../ui.js';
-import { monthSwitcher, monthFromQuery, movementsSwitch, incomesPath, dayList } from './movements.js';
+import { state } from '../store.js';
+import {
+  h, mainHead, formatEuro, monthLabel, currentMonth, todayIso, loadingBlock, errorBlock,
+} from '../ui.js';
+import { monthSwitcher, monthFromQuery, movementsSwitch, incomesPath, dayList, vintedLine } from './movements.js';
 
 // From the list of a past month, a new income starts in that month.
 export function newIncomePath(month) {
@@ -13,11 +16,14 @@ export function newIncomePath(month) {
 }
 
 // Shared with the incomes summary (summary-incomes.js).
+// The sale of a Vinted item opens the item (see vintedLine).
 export function incomeRow(income) {
-  return h('a', { class: 'row', href: `/entrate/${income.id}`, dataset: { link: '' } },
+  const href = income.vinted_item_id ? `/vinted/articolo/${income.vinted_item_id}` : `/entrate/${income.id}`;
+  return h('a', { class: 'row', href, dataset: { link: '' } },
     h('span', { class: 'row-main' },
       h('span', { class: 'row-title' }, income.category_name),
       h('span', { class: 'row-meta' }, income.received_by_name),
+      income.vinted_item_id ? vintedLine(income.vinted_item_title) : null,
       income.note ? h('span', { class: 'row-note' }, income.note) : null),
     h('span', { class: 'row-amount' }, formatEuro(income.amount_cents)));
 }
@@ -43,7 +49,7 @@ export async function mount(root, ctx) {
     }).catch(() => {});
   }
   root.append(
-    h('header', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Movimenti')),
+    mainHead('Movimenti', state.me.display_name),
     tabSlot, dueBanner, switcherSlot, body,
     h('div', { class: 'footer-bar' }, addLink));
 

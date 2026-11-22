@@ -13,7 +13,9 @@ from pathlib import Path
 
 DB_FILENAME = "spese.db"
 SESSION_COOKIE = "spese_session"
-MAX_RESTORE_BYTES = 50 * 1024 * 1024  # 50 MiB is far beyond years of expenses
+# Years of expenses take a few MiB; the Vinted photos (0.8.0) about 0.2 MiB
+# each. 512 MiB leaves room for a couple of thousand of them.
+MAX_RESTORE_BYTES = 512 * 1024 * 1024
 
 
 @dataclass(frozen=True)

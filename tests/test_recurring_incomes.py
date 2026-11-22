@@ -9,7 +9,7 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import CSRF, NASTIA
+from tests.conftest import CSRF, NASTIA, strip_vinted_schema
 
 API = "/api/v1"
 
@@ -245,6 +245,7 @@ def test_backup_restores_templates_and_old_backups_get_the_table(client, tmp_pat
     old.write_bytes(backup)
     conn = sqlite3.connect(old)
     conn.execute("DROP TABLE recurring_incomes")
+    strip_vinted_schema(conn)  # schema 5, newer still
     conn.execute("PRAGMA user_version = 3")
     conn.commit()
     conn.close()

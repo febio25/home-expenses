@@ -66,9 +66,14 @@ export async function mount(root, ctx) {
   const goBack = () => ctx.back(backPath);
 
   const errorBanner = h('div', { class: 'banner banner-error', role: 'alert', hidden: true });
+  // The sale of a Vinted item stays a Vinted income (the server refuses a
+  // change): only that category is offered.
+  const vintedTitle = income && income.vinted_item_id ? income.vinted_item_title : null;
   const form = createIncomeForm({
     users,
-    categories: categoriesFor(categories, income),
+    categories: vintedTitle
+      ? categories.filter((category) => category.code === income.category)
+      : categoriesFor(categories, income),
     me: state.me,
     values,
     onChange: () => { errorBanner.hidden = true; },
@@ -118,7 +123,7 @@ export async function mount(root, ctx) {
   async function remove() {
     const confirmed = await confirmDialog({
       title: 'Eliminare questa entrata?',
-      message: `${formatEuro(income.amount_cents)} (${income.category_name}), ${shortDate(income.income_date)}. L’eliminazione è definitiva.`,
+      message: `${formatEuro(income.amount_cents)} (${income.category_name}), ${shortDate(income.income_date)}. L’eliminazione è definitiva.${vintedTitle ? ` L’articolo «${vintedTitle}» tornerà in vendita.` : ''}`,
       confirmLabel: 'Elimina',
       danger: true,
     });
@@ -144,6 +149,9 @@ export async function mount(root, ctx) {
       }, '‹'),
       h('h1', { class: 'page-title' }, creating ? 'Nuova entrata' : 'Modifica entrata')),
     income ? h('p', { class: 'page-meta' }, `Inserita da ${income.created_by_name} il ${createdOn}`) : null,
+    vintedTitle
+      ? h('p', { class: 'page-meta' }, `Vendita dell’articolo Vinted «${vintedTitle}»: la categoria resta Vinted.`)
+      : null,
     form.element,
     creating
       ? h('div', { class: 'footer-bar' }, errorBanner, saveButton)

@@ -2,8 +2,9 @@
 // switch at the top leads to the month's incomes (incomes.js), in the same tab.
 
 import { api } from '../api.js';
+import { state } from '../store.js';
 import {
-  h, icon, formatEuro, monthLabel, dayLabel, currentMonth, shiftMonth,
+  h, icon, mainHead, formatEuro, monthLabel, dayLabel, currentMonth, shiftMonth,
   PAYMENT_LABELS, loadingBlock, errorBlock,
 } from '../ui.js';
 
@@ -57,6 +58,13 @@ export function monthSwitcher(month, onChange) {
     }, icon('right')));
 }
 
+// An expense or income that is the purchase or the sale of a Vinted item
+// (0.8.0) names the item, and opens it: its price and date are edited from
+// there, and its category stays Vinted.
+export function vintedLine(title) {
+  return h('span', { class: 'row-link-tag' }, icon('tag'), h('span', { class: 'row-link-text' }, title));
+}
+
 // showCategory: false in the list of a single category, where it would
 // repeat the same name on every row.
 function expenseRow(expense, { showCategory = true } = {}) {
@@ -66,10 +74,12 @@ function expenseRow(expense, { showCategory = true } = {}) {
     expense.paid_by_name,
     PAYMENT_LABELS[expense.payment_method].toLowerCase(),
   ].filter(Boolean).join(', ');
-  return h('a', { class: 'row', href: `/spesa/${expense.id}`, dataset: { link: '' } },
+  const href = expense.vinted_item_id ? `/vinted/articolo/${expense.vinted_item_id}` : `/spesa/${expense.id}`;
+  return h('a', { class: 'row', href, dataset: { link: '' } },
     h('span', { class: 'row-main' },
       h('span', { class: 'row-title' }, title),
       h('span', { class: 'row-meta' }, meta),
+      expense.vinted_item_id ? vintedLine(expense.vinted_item_title) : null,
       expense.note ? h('span', { class: 'row-note' }, expense.note) : null),
     h('span', { class: 'row-amount' }, formatEuro(expense.amount_cents)));
 }
@@ -110,7 +120,7 @@ export function expenseList(expenses, rowOptions) {
 
 export async function mount(root, ctx) {
   let month = monthFromQuery(ctx.query);
-  const head = h('header', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Movimenti'));
+  const head = mainHead('Movimenti', state.me.display_name);
   const tabSlot = h('div');
   const switcherSlot = h('div');
   const body = h('div');

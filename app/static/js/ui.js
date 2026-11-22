@@ -31,6 +31,15 @@ const ICONS = {
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   left: '<path d="M15 5l-7 7 7 7"/>',
   right: '<path d="M9 5l7 7-7 7"/>',
+  // 0.8.0, Vinted section: price tag (tab), search, camera, photo, close,
+  // sold check, enlarge.
+  tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  expand: '<path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/>',
 };
 
 export function icon(name) {
@@ -41,6 +50,20 @@ export function icon(name) {
     `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" ` +
     `stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
   return wrapper;
+}
+
+// Head of the four main screens (0.8.0): title on the left; on the right
+// who is signed in and the settings, which left the bottom bar to make room
+// for Vinted. An icon without text, but a full-size tap target and a name
+// for screen readers.
+export function mainHead(title, name) {
+  return h('header', { class: 'page-head has-tools' },
+    h('h1', { class: 'page-title' }, title),
+    h('div', { class: 'page-tools' },
+      name ? h('span', { class: 'page-who' }, name) : null,
+      h('a', {
+        class: 'page-gear', href: '/impostazioni', 'aria-label': 'Impostazioni', dataset: { link: '' },
+      }, icon('gear'))));
 }
 
 // --- formatting -----------------------------------------------------------
@@ -295,6 +318,26 @@ export function promptDialog({ title, label, value = '', confirmLabel = 'Salva',
     setTimeout(() => { field.focus(); if (field.select) field.select(); }, 50);
     return form;
   });
+}
+
+// One choice from a short list (an expense or income to link to a Vinted
+// item). options: [{ value, label, meta, amount }]. Resolves to the value
+// of the option picked, or null.
+export function choiceDialog({ title, text = null, options, empty = 'Niente da scegliere.' }) {
+  return openDialog((finish) => h('div', { class: 'dialog-body' },
+    h('h2', { class: 'dialog-title' }, title),
+    text ? h('p', { class: 'dialog-text' }, text) : null,
+    options.length
+      ? h('div', { class: 'dialog-list' }, options.map((option) => h('button', {
+        class: 'dialog-option', type: 'button', onclick: () => finish(option.value),
+      },
+      h('span', { class: 'dialog-option-main' },
+        h('span', { class: 'dialog-option-title' }, option.label),
+        option.meta ? h('span', { class: 'dialog-option-meta' }, option.meta) : null),
+      option.amount ? h('span', { class: 'dialog-option-amount' }, option.amount) : null)))
+      : h('p', { class: 'dialog-text' }, empty),
+    h('div', { class: 'dialog-actions' },
+      h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => finish(null) }, 'Annulla'))));
 }
 
 // Loading / error placeholders used while a view fetches its data.

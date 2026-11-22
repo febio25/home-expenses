@@ -31,13 +31,16 @@ function categoriesSection() {
 
   async function refresh() {
     const categories = await loadCategories({ force: true });
+    // The Vinted category (0.8.0) can be renamed, never deactivated: the
+    // section of the same name relies on it.
     list.replaceChildren(...categories.map((category) => h('li', { class: 'manage-item' },
       h('span', { class: 'manage-name' },
         category.name,
-        category.is_active ? null : h('span', { class: 'tag' }, 'disattivata')),
+        category.is_active ? null : h('span', { class: 'tag' }, 'disattivata'),
+        category.system_key === 'vinted' ? h('span', { class: 'tag' }, 'usata dalla sezione Vinted') : null),
       h('span', { class: 'manage-actions' },
         h('button', { class: 'btn-text', type: 'button', onclick: () => rename(category) }, 'Rinomina'),
-        h('button', {
+        category.system_key ? null : h('button', {
           class: 'btn-text', type: 'button', onclick: () => toggle(category),
         }, category.is_active ? 'Disattiva' : 'Riattiva')))));
   }
@@ -162,11 +165,14 @@ function exportSection() {
   let what = 'expenses';
   let period = 'month';
   let format = 'standard';
-  // Two separate files: the expense CSV keeps its usual columns.
+  // Separate files: the expense CSV keeps its usual columns. The Vinted
+  // items are all exported, with no period: they live for months.
   const EXPORTS = {
     expenses: { path: '/export.csv', fallbackName: 'spese.csv' },
     incomes: { path: '/export/incomes.csv', fallbackName: 'entrate.csv' },
+    vinted: { path: '/export/vinted.csv', fallbackName: 'vinted_articoli.csv', allItems: true },
   };
+  const periodBlock = h('div', {});
   function choice(name, options, onPick) {
     return h('div', { class: 'radio-list' }, options.map((option, index) => h('label', { class: 'radio' },
       h('input', {
@@ -178,14 +184,26 @@ function exportSection() {
         option.hint ? h('span', { class: 'radio-hint' }, option.hint) : null))));
   }
 
+  periodBlock.append(
+    h('span', { class: 'label' }, 'Periodo'),
+    choice('export-period', [
+      { value: 'month', label: 'Un mese' },
+      { value: 'range', label: 'Un intervallo di date' },
+    ], (value) => {
+      period = value;
+      monthFields.hidden = value !== 'month';
+      rangeFields.hidden = value !== 'range';
+    }),
+    monthFields, rangeFields);
+
   const button = h('button', {
     class: 'btn btn-primary btn-block', type: 'button',
     onclick: async () => {
       const query = new URLSearchParams({ format });
-      if (period === 'month') {
+      if (!EXPORTS[what].allItems && period === 'month') {
         if (!month.value) { toast('Scegli un mese.', { kind: 'error' }); return; }
         query.set('month', month.value);
-      } else {
+      } else if (!EXPORTS[what].allItems) {
         if (!from.value || !to.value) { toast('Indica entrambe le date.', { kind: 'error' }); return; }
         if (from.value > to.value) { toast('La data iniziale viene dopo quella finale.', { kind: 'error' }); return; }
         query.set('from', from.value);
@@ -204,17 +222,16 @@ function exportSection() {
     choice('export-what', [
       { value: 'expenses', label: 'Spese' },
       { value: 'incomes', label: 'Entrate', hint: 'Un file a parte: data, importo, categoria, nota, ricevuto da.' },
-    ], (value) => { what = value; }),
-    h('span', { class: 'label' }, 'Periodo'),
-    choice('export-period', [
-      { value: 'month', label: 'Un mese' },
-      { value: 'range', label: 'Un intervallo di date' },
+      {
+        value: 'vinted',
+        label: 'Articoli Vinted',
+        hint: 'Tutti gli articoli: acquisto, vendita, guadagno, giorni in vendita.',
+      },
     ], (value) => {
-      period = value;
-      monthFields.hidden = value !== 'month';
-      rangeFields.hidden = value !== 'range';
+      what = value;
+      periodBlock.hidden = Boolean(EXPORTS[value].allItems);
     }),
-    monthFields, rangeFields,
+    periodBlock,
     h('span', { class: 'label' }, 'Formato'),
     choice('export-format', [
       { value: 'standard', label: 'Standard', hint: 'Virgola come separatore, punto decimale. Per l’analisi con un assistente AI.' },
@@ -323,10 +340,19 @@ function accountSection(users, navigate) {
 
 // --- view -----------------------------------------------------------------------
 
+// Settings open from the icon at the top of the main screens (0.8.0): the
+// arrow goes back to where they were opened from.
+function head(ctx) {
+  return h('header', { class: 'page-head' },
+    h('a', {
+      class: 'page-back', href: '/', 'aria-label': 'Indietro',
+      onclick: (event) => { event.preventDefault(); ctx.back('/'); },
+    }, '‹'),
+    h('h1', { class: 'page-title' }, 'Impostazioni'));
+}
+
 export async function mount(root, ctx) {
-  root.append(
-    h('header', { class: 'page-head' }, h('h1', { class: 'page-title' }, 'Impostazioni')),
-    loadingBlock());
+  root.append(head(ctx), loadingBlock());
 
   const categories = categoriesSection();
   const merchants = merchantsSection();
@@ -347,9 +373,7 @@ export async function mount(root, ctx) {
     .catch(() => {});
 
   root.replaceChildren(
-    h('header', { class: 'page-head' },
-      h('h1', { class: 'page-title' }, 'Impostazioni'),
-      h('span', { class: 'page-who' }, state.me.display_name)),
+    head(ctx),
     h('a', { class: 'card settings-link', href: '/ricorrenti', dataset: { link: '' } },
       h('span', {},
         h('span', { class: 'settings-title' }, 'Ricorrenti'),
@@ -357,7 +381,7 @@ export async function mount(root, ctx) {
       h('span', { class: 'settings-go', 'aria-hidden': 'true' }, '›')),
     section('Categorie', 'Aggiungi, rinomina, disattiva', categories.element),
     section('Esercenti', 'Rinomina o unisci i doppioni', merchants.element),
-    section('Esporta CSV', 'Spese o entrate, per mese o intervallo di date', exportSection()),
+    section('Esporta CSV', 'Spese, entrate o articoli Vinted', exportSection()),
     section('Backup e ripristino', 'Scarica o ricarica tutti i dati', backupSection()),
     section('Account', 'Password, uscita', accountSection(users, ctx.navigate)),
     version);

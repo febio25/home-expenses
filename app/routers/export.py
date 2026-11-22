@@ -1,6 +1,6 @@
-"""CSV export of expenses and of incomes, in a standard flavour and an
-Italian-Excel flavour. Two separate files: the expense CSV keeps exactly
-the columns it always had.
+"""CSV export of expenses, of incomes and (0.8.0) of the Vinted items, in a
+standard flavour and an Italian-Excel flavour. Separate files: the expense
+CSV keeps exactly the columns it always had.
 """
 
 from __future__ import annotations
@@ -14,12 +14,14 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 
+from .. import dates
 from ..dates import range_filter, resolve_range
 from ..db import get_db
 from ..money import format_cents
 from ..security import current_user
 from .expenses import EXPENSE_SELECT
 from .incomes import INCOME_SELECT, income_out
+from .vinted import ITEM_SELECT, item_out
 
 router = APIRouter(tags=["export"], dependencies=[Depends(current_user)])
 
@@ -43,6 +45,21 @@ INCOME_CSV_COLUMNS = [
     "inserito_da",
     "creato_il",
 ]
+# One row per item: what it cost, what it made, how long it waited.
+VINTED_CSV_COLUMNS = [
+    "articolo",
+    "stato",
+    "data_acquisto",
+    "prezzo_acquisto",
+    "data_vendita",
+    "prezzo_vendita",
+    "guadagno",
+    "giorni_in_vendita",
+    "nota",
+    "inserito_da",
+    "creato_il",
+]
+VINTED_STATUS_LABELS = {"listed": "In vendita", "sold": "Venduto", "withdrawn": "Ritirato"}
 PAYMENT_LABELS = {"card": "Carta", "cash": "Contanti", "other": "Altro"}
 
 Flavour = Literal["standard", "excel_it"]
@@ -105,6 +122,41 @@ def build_incomes_csv(rows: list[dict], flavour: str) -> str:
         ),
         excel,
     )
+
+
+def build_vinted_csv(items: list[dict], flavour: str, today: date) -> str:
+    """Render Vinted items (as returned by ``item_out``) as CSV text.
+
+    guadagno: sale minus purchase, the whole price for things already at
+    home, empty until sold. giorni_in_vendita: from the day it went on sale
+    to the sale (or to today); empty for a withdrawn item.
+    """
+    excel = flavour == "excel_it"
+
+    def money(cents: int | None) -> str:
+        return "" if cents is None else format_cents(cents, "," if excel else ".")
+
+    records = []
+    for item in items:
+        purchase, sale = item["purchase"], item["sale"]
+        days = ""
+        if item["status"] != "withdrawn":
+            end = date.fromisoformat(sale["income_date"]) if sale else today
+            days = str(max(0, (end - date.fromisoformat(item["listed_on"])).days))
+        records.append([
+            item["title"],
+            VINTED_STATUS_LABELS[item["status"]],
+            purchase["expense_date"] if purchase else "",
+            money(purchase["amount_cents"]) if purchase else "",
+            sale["income_date"] if sale else "",
+            money(sale["amount_cents"]) if sale else "",
+            money(item["gain_cents"]),
+            days,
+            item["note"] or "",
+            item["created_by_name"],
+            item["created_at"],
+        ])
+    return _render(VINTED_CSV_COLUMNS, records, excel)
 
 
 def _filename(
@@ -181,4 +233,24 @@ def export_incomes_csv(
         build_incomes_csv([income_out(row) for row in rows], flavour),
         excel,
         _filename("entrate", month, start, end, excel),
+    )
+
+
+@router.get(
+    "/export/vinted.csv",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+def export_vinted_csv(
+    flavour: Flavour = Query("standard", alias="format"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Download every Vinted item, oldest first: purchase, sale, gain and
+    days on sale. No date filter: the items are few and live for months."""
+    rows = db.execute(f"{ITEM_SELECT} ORDER BY v.listed_on, v.id").fetchall()
+    excel = flavour == "excel_it"
+    return _csv_response(
+        build_vinted_csv([item_out(row) for row in rows], flavour, dates.today()),
+        excel,
+        f"vinted_articoli{'_excel' if excel else ''}.csv",
     )

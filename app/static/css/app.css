@@ -484,6 +484,185 @@ a.bar:active { background: var(--primary-soft); }
 .dialog-text { color: var(--muted); margin-top: 8px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
+/* --- 0.8.0: settings in the head of the main screens -------------------------- */
+
+/* The bottom bar gave its fourth place to Vinted: the settings open from an
+   icon next to the name, top right, on the four main screens. */
+.page-head.has-tools { align-items: center; margin-bottom: 8px; }
+.page-tools { display: flex; align-items: center; margin-right: -12px; }
+.page-gear {
+  display: grid; place-items: center; width: var(--tap); height: var(--tap); border-radius: 50%;
+  color: var(--muted); text-decoration: none;
+}
+.page-gear:active { background: var(--primary-soft); color: var(--primary); }
+
+/* --- 0.8.0: Vinted section ----------------------------------------------------- */
+
+.label-soft { font-weight: 400; color: var(--muted); }
+.form-hint { color: var(--muted); font-size: 0.8125rem; margin: 14px 4px 0; }
+.form-hint + .btn-block { margin-top: 6px; }
+.form-hint-end { margin-top: 18px; }
+.gain { color: var(--primary); font-weight: 700; }
+.loss { color: var(--danger); font-weight: 700; }
+
+/* search and filters of the item list */
+.search { position: relative; }
+.search > .icon { position: absolute; left: 13px; top: 12px; color: var(--muted); pointer-events: none; }
+.search > .input { padding-left: 44px; }
+.pills { display: flex; gap: 6px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; }
+.pills::-webkit-scrollbar { display: none; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  min-height: 40px; padding: 6px 12px; white-space: nowrap;
+  background: var(--surface); border: 1.5px solid var(--line); border-radius: 20px;
+  color: var(--ink); font-weight: 600; font-size: 0.9375rem;
+}
+.pill.is-selected { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-press); }
+.pill-count { color: var(--muted); }
+.pill.is-selected .pill-count { color: var(--primary-press); }
+.list-head { margin: 18px 4px 8px; }
+.list-head > .day-head { margin: 0; gap: 12px; }
+.list-head-note { display: block; color: var(--muted); font-size: 0.8125rem; margin-top: 2px; }
+.list-card { margin-top: 14px; }
+
+/* An item row starts with its photo, as in Vinted's own lists: the photo
+   opens full size, the rest of the row opens the item. */
+.art-row { display: flex; align-items: center; gap: 12px; padding: 10px 8px 10px 12px; }
+.art-row + .art-row { border-top: 1px solid var(--line); }
+.art-row:active { background: var(--primary-soft); }
+.thumb {
+  position: relative; flex: none; display: block; width: 56px; height: 56px;
+  padding: 0; border: 0; border-radius: 10px; background: var(--paper);
+}
+.thumb > img { display: block; width: 56px; height: 56px; object-fit: cover; border-radius: 10px; }
+.thumb.is-empty {
+  display: grid; place-items: center; color: #7F918A;
+  border: 1.5px dashed #B9C7C0; background: var(--paper);
+}
+.thumb-sold {
+  position: absolute; right: -6px; bottom: -6px; width: 22px; height: 22px;
+  display: grid; place-items: center; border-radius: 50%;
+  background: var(--primary); color: #fff; border: 2px solid var(--surface);
+}
+.thumb-sold svg { width: 12px; height: 12px; stroke-width: 3.5; }
+.art-link {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 56px;
+  color: inherit; text-decoration: none;
+}
+.art-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.art-title {
+  font-weight: 650; line-height: 1.3; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.art-price { font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.art-meta { color: var(--muted); font-size: 0.8125rem; }
+.art-link > .bar-go { flex: none; padding: 0 4px; }
+
+/* the item screen */
+.art-hero { display: flex; align-items: flex-start; gap: 14px; }
+.thumb-large, .thumb-large > img { width: 104px; height: 104px; border-radius: 14px; }
+.thumb-large.is-empty {
+  gap: 2px; align-content: center; color: var(--primary); background: var(--surface); border-color: #9DB0A7;
+}
+.thumb-add { font-size: 0.75rem; font-weight: 700; }
+.thumb-zoom {
+  position: absolute; right: 6px; bottom: 6px; width: 28px; height: 28px;
+  display: grid; place-items: center; border-radius: 50%;
+  background: rgb(255 255 255 / 0.92); color: var(--ink); box-shadow: 0 1px 3px rgb(20 37 31 / 0.3);
+}
+.thumb-zoom svg { width: 16px; height: 16px; }
+.art-hero-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.art-hero-title { font-size: 1.1875rem; font-weight: 750; line-height: 1.25; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.status {
+  padding: 3px 10px; border-radius: 12px; font-size: 0.8125rem; font-weight: 650;
+  background: var(--primary-soft); color: var(--primary-press);
+}
+.status.is-sold { background: var(--primary); color: #fff; }
+.status.is-withdrawn { background: var(--paper); color: var(--muted); border: 1px solid var(--line); }
+.art-hero-actions { display: flex; flex-wrap: wrap; margin-left: -8px; }
+.info { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.info + .info { border-top: 1px solid var(--line); }
+.info-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.info-figure { font-size: 1.25rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.info-text { font-weight: 650; }
+.info-meta { color: var(--muted); font-size: 0.8125rem; }
+.info-note { overflow-wrap: anywhere; }
+.info-gain { flex: none; font-size: 1.125rem; white-space: nowrap; }
+.info > .btn-text { flex: none; }
+.btn-text-danger { color: var(--danger); padding-left: 0; }
+.actions-row { display: flex; gap: 8px; margin-top: 20px; }
+.actions-row > .btn-quiet { flex: 1; }
+
+/* new item and sale */
+.vinted-form { padding-bottom: 16px; }
+.vinted-form .receipt { margin-top: 14px; }
+.photo-pick {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 0; border: 0; background: transparent; text-align: left; color: inherit;
+}
+.photo-tile {
+  flex: none; display: grid; place-items: center; width: 72px; height: 72px;
+  border: 1.5px dashed #9DB0A7; border-radius: 14px; background: var(--surface); color: var(--primary);
+}
+.photo-preview { flex: none; display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 14px; }
+.photo-pick-text { display: flex; flex-direction: column; align-items: flex-start; }
+.photo-pick-title { font-weight: 700; color: var(--primary); }
+.photo-pick-hint { color: var(--muted); font-size: 0.8125rem; }
+.gain-preview { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: -6px 4px 8px; font-weight: 600; }
+.gain-preview > .gain, .gain-preview > .loss { font-size: 1.0625rem; }
+.sale-item { margin: 0 0 14px; }
+
+/* the full-size photo (a modal dialog: back button and Esc close it) */
+dialog.viewer {
+  width: 100%; height: 100%; max-width: none; max-height: none; margin: 0;
+  padding: calc(64px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));
+  border: 0; background: rgb(20 37 31 / 0.96); color: #fff;
+}
+dialog.viewer[open] { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+dialog.viewer::backdrop { background: rgb(20 37 31 / 0.6); }
+.viewer-close {
+  position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; width: var(--tap); height: var(--tap);
+  display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: rgb(255 255 255 / 0.14); color: #fff;
+}
+.viewer-img {
+  display: block; width: 100%; max-width: 520px; min-height: 0; flex: 0 1 auto;
+  max-height: calc(100% - 80px); object-fit: contain; border-radius: 12px;
+}
+.viewer-caption { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; font-size: 0.875rem; color: rgb(255 255 255 / 0.8); }
+.viewer-caption > strong { color: #fff; font-size: 1rem; }
+
+/* Movimenti: the purchase or sale of an item names it */
+.row-link-tag { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--primary); font-size: 0.8125rem; font-weight: 650; }
+.row-link-tag > .icon { flex: none; }
+.row-link-tag svg { width: 14px; height: 14px; }
+.row-link-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Vinted summary: gain card right under its title, DAC7 counter */
+.balance-flush { margin-top: 0; }
+.meter { padding: 12px 14px; }
+.meter + .meter { border-top: 1px solid var(--line); }
+.meter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-weight: 650; }
+.meter-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.meter > .bar-track { margin: 8px 0 0; }
+.card-note { color: var(--muted); font-size: 0.8125rem; padding: 10px 14px 12px; border-top: 1px solid var(--line); }
+
+/* choice dialog: an expense or income to link to an item */
+.dialog-list {
+  max-height: min(55vh, 420px); overflow-y: auto; margin-top: 14px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+}
+.dialog-option {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px;
+  padding: 10px 14px; border: 0; background: transparent; text-align: left;
+}
+.dialog-option + .dialog-option { border-top: 1px solid var(--line); }
+.dialog-option:active { background: var(--primary-soft); }
+.dialog-option-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dialog-option-title { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dialog-option-meta { color: var(--muted); font-size: 0.8125rem; }
+.dialog-option-amount { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
 @media (prefers-reduced-motion: reduce) {
   .btn-save.is-saved { animation: none; }
 }

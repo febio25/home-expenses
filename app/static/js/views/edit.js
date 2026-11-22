@@ -40,10 +40,15 @@ export async function mount(root, ctx) {
     day: 'numeric', month: 'long', year: 'numeric',
   });
 
+  // The purchase of a Vinted item keeps its category (the server refuses a
+  // change): only that one is offered. Opened from the item, back goes there.
+  const vintedTitle = expense.vinted_item_id ? expense.vinted_item_title : null;
   const form = createExpenseForm({
     users,
     // Active categories, plus this expense's own one even if deactivated since.
-    categories: categories.filter((c) => c.is_active || c.id === expense.category_id),
+    categories: vintedTitle
+      ? categories.filter((c) => c.id === expense.category_id)
+      : categories.filter((c) => c.is_active || c.id === expense.category_id),
     merchants,
     me: state.me,
     values: {
@@ -91,9 +96,10 @@ export async function mount(root, ctx) {
 
   async function remove() {
     const where = expense.merchant_name ? ` da ${expense.merchant_name}` : '';
+    const linked = vintedTitle ? ` L’articolo «${vintedTitle}» resterà senza acquisto.` : '';
     const confirmed = await confirmDialog({
       title: 'Eliminare questa spesa?',
-      message: `${formatEuro(expense.amount_cents)}${where}, ${shortDate(expense.expense_date)}. L’eliminazione è definitiva.`,
+      message: `${formatEuro(expense.amount_cents)}${where}, ${shortDate(expense.expense_date)}. L’eliminazione è definitiva.${linked}`,
       confirmLabel: 'Elimina',
       danger: true,
     });
@@ -117,6 +123,9 @@ export async function mount(root, ctx) {
       }, 'Annulla')),
     h('p', { class: 'page-meta' },
       `Inserita da ${expense.created_by_name} il ${createdOn}`),
+    vintedTitle
+      ? h('p', { class: 'page-meta' }, `Acquisto dell’articolo Vinted «${vintedTitle}»: la categoria resta Vinted.`)
+      : null,
     form.element,
     h('div', { class: 'footer-bar footer-bar-row' }, errorBanner, deleteButton, saveButton));
 }

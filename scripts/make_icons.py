@@ -79,6 +79,22 @@ def _glyph(draw: ImageDraw.ImageDraw, size: int, kind: str) -> None:
         draw.rounded_rectangle(
             [centre - stroke / 2, centre - arm, centre + stroke / 2, centre + arm],
             radius=stroke / 2, fill=WHITE)
+    elif kind == "tag":  # price tag of the Vinted section (0.8.0), tilted, with its hole
+        import math
+
+        centre = size / 2
+        points = [(0.24, 0.5), (0.39, 0.35), (0.76, 0.35), (0.76, 0.65), (0.39, 0.65)]
+        angle = math.radians(-45)
+
+        def turn(x: float, y: float) -> tuple[float, float]:
+            dx, dy = x * size - centre, y * size - centre
+            return (centre + dx * math.cos(angle) - dy * math.sin(angle),
+                    centre + dx * math.sin(angle) + dy * math.cos(angle))
+
+        draw.polygon([turn(x, y) for x, y in points], fill=WHITE)
+        hole_x, hole_y = turn(0.43, 0.5)
+        radius = size * 0.045
+        draw.ellipse([hole_x - radius, hole_y - radius, hole_x + radius, hole_y + radius], fill=GREEN)
     else:  # list
         for row in (0.34, 0.5, 0.66):
             y = size * row
@@ -118,6 +134,7 @@ def main() -> None:
     make("icon-maskable-512.png", 512, shape="full", content=0.48)
     make("shortcut-new.png", 96, shape="circle", glyph="plus")
     make("shortcut-list.png", 96, shape="circle", glyph="list")
+    make("shortcut-vinted.png", 96, shape="circle", glyph="tag")
 
 
 if __name__ == "__main__":

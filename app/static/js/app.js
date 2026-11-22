@@ -3,6 +3,7 @@
 import { api } from './api.js';
 import { state, loadMe, clearState, invalidateLists } from './store.js';
 import { h, icon, errorBlock, placeToasts } from './ui.js';
+import { handleOverlayPop } from './overlay.js';
 import * as loginView from './views/login.js';
 import * as setupView from './views/setup.js';
 import * as newView from './views/new.js';
@@ -17,6 +18,11 @@ import * as settingsView from './views/settings.js';
 import * as recurringView from './views/recurring.js';
 import * as recurringFormView from './views/recurring-form.js';
 import * as recurringIncomeFormView from './views/recurring-income-form.js';
+import * as vintedView from './views/vinted.js';
+import * as vintedSummaryView from './views/vinted-summary.js';
+import * as vintedNewView from './views/vinted-new.js';
+import * as vintedItemView from './views/vinted-item.js';
+import * as vintedSellView from './views/vinted-sell.js';
 
 const ROUTES = [
   { pattern: /^\/$/, view: newView, tab: 'new' },
@@ -27,10 +33,17 @@ const ROUTES = [
   { pattern: /^\/riepilogo$/, view: summaryView, tab: 'summary' },
   { pattern: /^\/riepilogo\/categoria\/(\d+)$/, view: summaryCategoryView, tab: 'summary' },
   { pattern: /^\/riepilogo\/entrate$/, view: summaryIncomesView, tab: 'summary' },
-  { pattern: /^\/impostazioni$/, view: settingsView, tab: 'settings' },
-  { pattern: /^\/ricorrenti$/, view: recurringView, tab: 'settings' },
-  { pattern: /^\/ricorrenti\/(nuova|\d+)(?:\/(registra))?$/, view: recurringFormView, tab: 'settings' },
-  { pattern: /^\/ricorrenti\/entrate\/(nuova|\d+)(?:\/(registra))?$/, view: recurringIncomeFormView, tab: 'settings' },
+  { pattern: /^\/vinted$/, view: vintedView, tab: 'vinted' },
+  { pattern: /^\/vinted\/riepilogo$/, view: vintedSummaryView, tab: 'vinted' },
+  { pattern: /^\/vinted\/nuovo$/, view: vintedNewView, tab: 'vinted' },
+  { pattern: /^\/vinted\/articolo\/(\d+)$/, view: vintedItemView, tab: 'vinted' },
+  { pattern: /^\/vinted\/articolo\/(\d+)\/venduto$/, view: vintedSellView, tab: 'vinted' },
+  // Settings open from the icon at the top of the main screens (0.8.0): the
+  // bottom bar stays, with no tab lit.
+  { pattern: /^\/impostazioni$/, view: settingsView, tab: 'none' },
+  { pattern: /^\/ricorrenti$/, view: recurringView, tab: 'none' },
+  { pattern: /^\/ricorrenti\/(nuova|\d+)(?:\/(registra))?$/, view: recurringFormView, tab: 'none' },
+  { pattern: /^\/ricorrenti\/entrate\/(nuova|\d+)(?:\/(registra))?$/, view: recurringIncomeFormView, tab: 'none' },
   { pattern: /^\/login$/, view: loginView, public: true },
   { pattern: /^\/setup$/, view: setupView, public: true },
 ];
@@ -39,7 +52,7 @@ const TABS = [
   { id: 'new', path: '/', label: 'Nuova', icon: 'plus' },
   { id: 'movements', path: '/movimenti', label: 'Movimenti', icon: 'list' },
   { id: 'summary', path: '/riepilogo', label: 'Riepilogo', icon: 'chart' },
-  { id: 'settings', path: '/impostazioni', label: 'Impostazioni', icon: 'gear' },
+  { id: 'vinted', path: '/vinted', label: 'Vinted', icon: 'tag' },
 ];
 
 const viewRoot = document.getElementById('view');
@@ -145,7 +158,11 @@ document.addEventListener('click', (event) => {
   }
 });
 
-window.addEventListener('popstate', render);
+// Back closes the full-size photo first (overlay.js), then leaves screens.
+window.addEventListener('popstate', () => {
+  if (handleOverlayPop()) return;
+  render();
+});
 
 // The session expired or was revoked while the app was open.
 window.addEventListener('spese:unauthorized', () => {

@@ -25,6 +25,7 @@ from .routers import (
     recurring,
     recurring_incomes,
     summary,
+    vinted,
 )
 from .security import LoginThrottle
 
@@ -92,7 +93,7 @@ def create_app() -> FastAPI:
 
     for module in (
         auth, expenses, incomes, recurring, recurring_incomes, categories, merchants, summary,
-        export, backup,
+        vinted, export, backup,
     ):
         app.include_router(module.router, prefix=API_PREFIX)
 

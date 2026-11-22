@@ -6,6 +6,7 @@ the real analysis happens on the exported CSV.
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -90,17 +91,10 @@ def _month_key(day) -> str:
     return f"{day.year:04d}-{day.month:02d}"
 
 
-@router.get("/trend", response_model=list[MonthTotals])
-def monthly_trend(
-    month: str = Query(..., description="Last month of the window, YYYY-MM"),
-    months: int = Query(6, ge=1, le=24, description="How many months, ending with `month`"),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    """Incomes and expenses of each month in the window, oldest first.
-
-    Every month of the window is listed, with zeros where nothing was
-    recorded, so a chart can draw one slot per month.
-    """
+def trend_skeleton(month: str, months: int) -> tuple[date, date, dict[str, dict]]:
+    """First and last day of a window of ``months`` months ending with
+    ``month``, and one all-zero entry per month, oldest first. Shared with
+    the trend of the Vinted section."""
     first_day, last_day = month_bounds(month)
     try:
         start = add_months(first_day, -(months - 1), 1)
@@ -113,7 +107,21 @@ def monthly_trend(
             "month": key, "income_cents": 0, "income_count": 0,
             "expense_cents": 0, "expense_count": 0, "voucher_cents": 0,
         }
+    return start, last_day, totals
 
+
+@router.get("/trend", response_model=list[MonthTotals])
+def monthly_trend(
+    month: str = Query(..., description="Last month of the window, YYYY-MM"),
+    months: int = Query(6, ge=1, le=24, description="How many months, ending with `month`"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Incomes and expenses of each month in the window, oldest first.
+
+    Every month of the window is listed, with zeros where nothing was
+    recorded, so a chart can draw one slot per month.
+    """
+    start, last_day, totals = trend_skeleton(month, months)
     window = (start.isoformat(), last_day.isoformat())
     for table, column, prefix in (
         ("expenses", "expense_date", "expense"),

@@ -24,10 +24,12 @@ INCOME_SELECT = """
 SELECT i.id, i.amount_cents, i.income_date, i.category, i.note,
        i.received_by_user_id, receiver.display_name AS received_by_name,
        i.created_by_user_id, author.display_name AS created_by_name,
-       i.created_at, i.updated_at
+       i.created_at, i.updated_at,
+       v.id AS vinted_item_id, v.title AS vinted_item_title
   FROM incomes i
   JOIN users receiver ON receiver.id = i.received_by_user_id
   JOIN users author ON author.id = i.created_by_user_id
+  LEFT JOIN vinted_items v ON v.sale_income_id = i.id
 """
 
 
@@ -159,7 +161,7 @@ def update_income(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Change only the fields present in the body. ``"note": null`` clears the note."""
-    fetch_income(db, income_id)
+    current = fetch_income(db, income_id)
     sent = body.model_fields_set
     changes: dict[str, object] = {}
 
@@ -170,6 +172,13 @@ def update_income(
     if "category" in sent:
         if body.category is None:
             raise HTTPException(status_code=422, detail="Scegli una categoria.")
+        # The sale of a Vinted item stays a Vinted income (section totals).
+        if current["vinted_item_id"] is not None and body.category != current["category"]:
+            raise HTTPException(
+                status_code=409,
+                detail=f"È la vendita dell'articolo Vinted «{current['vinted_item_title']}»: "
+                "la categoria resta Vinted.",
+            )
         changes["category"] = body.category
     if "income_date" in sent:
         if body.income_date is None:

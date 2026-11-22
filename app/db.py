@@ -15,8 +15,8 @@ from .config import get_settings
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 # Tables of schema version 1: any backup of this app has them. Tables added
-# later (recurring_expenses, incomes, recurring_incomes) are created by
-# migrate() after a restore.
+# later (recurring_expenses, incomes, recurring_incomes, vinted_items,
+# vinted_photos) are created by migrate() after a restore.
 REQUIRED_TABLES = {"users", "sessions", "categories", "merchants", "expenses"}
 
 

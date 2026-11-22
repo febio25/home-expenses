@@ -48,6 +48,11 @@ class CategoryOut(BaseModel):
     sort_order: int
     is_active: bool
     expense_count: int
+    system_key: str | None = Field(
+        default=None,
+        description="Set on a category the app itself relies on (\"vinted\"): "
+        "it can be renamed, never deactivated or deleted",
+    )
 
 
 class CategoryCreate(BaseModel):
@@ -123,6 +128,10 @@ class ExpenseOut(BaseModel):
     created_by_name: str
     created_at: str
     updated_at: str
+    vinted_item_id: int | None = Field(
+        default=None, description="The Vinted item this expense bought, if any"
+    )
+    vinted_item_title: str | None = None
 
 
 # --- recurring expenses ---------------------------------------------------
@@ -208,6 +217,8 @@ INCOME_CATEGORIES = {
     "refund": "Rimborsi",
     "gift": "Regali",
     "sale": "Vendite",
+    # 0.8.0: sales on Vinted, linked to an item of the Vinted section.
+    "vinted": "Vinted",
     "other": "Altro",
     # 0.7.0: the month's meal vouchers, registered as one income a month
     # (purchases paid with them are recorded as normal expenses, in full).
@@ -258,6 +269,10 @@ class IncomeOut(BaseModel):
     created_by_name: str
     created_at: str
     updated_at: str
+    vinted_item_id: int | None = Field(
+        default=None, description="The Vinted item this income sold, if any"
+    )
+    vinted_item_title: str | None = None
 
 
 # --- recurring incomes ----------------------------------------------------
@@ -360,6 +375,124 @@ class IncomeSummaryOut(BaseModel):
     total_cents: int
     income_count: int
     by_category: list[IncomeCategoryTotal]
+
+
+# --- Vinted -------------------------------------------------------------------
+# An item bought to resell, or sold from home. Its money lives in an expense
+# (category Vinted) and an income (category "vinted"): the item points at them.
+
+VintedStatus = Literal["listed", "sold", "withdrawn"]
+
+
+class VintedPurchaseIn(BaseModel):
+    """The purchase of an item: a new expense in the Vinted category, or,
+    with ``expense_id``, one already recorded there (for example from
+    "Nuova spesa")."""
+
+    expense_id: int | None = Field(default=None, description="An expense of the Vinted category, not linked yet")
+    amount: str | None = Field(default=None, max_length=20, description="Total paid: price, shipping, fees")
+    expense_date: date | None = None
+    merchant: str | None = Field(default="Vinted", max_length=80, description="Where it was bought")
+    paid_by_user_id: int | None = Field(default=None, description="Defaults to the logged-in user")
+    payment_method: PaymentMethod = "card"
+
+
+class VintedItemCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=300)
+    listed_on: date | None = Field(
+        default=None, description="On sale since: defaults to the purchase date, else today"
+    )
+    purchase: VintedPurchaseIn | None = Field(default=None, description="None for things already at home")
+    client_uuid: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=64,
+        description="Idempotency key: retrying with the same value never creates a duplicate",
+    )
+
+
+class VintedItemUpdate(BaseModel):
+    """Partial update. ``"note": null`` clears the note."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=300)
+    is_withdrawn: bool | None = Field(default=None, description="Kept or given away: no longer for sale")
+
+
+class VintedSaleIn(BaseModel):
+    """The sale of an item: a new income in the category "vinted", or, with
+    ``income_id``, one already recorded in "vinted" or "sale" (moved to
+    "vinted")."""
+
+    income_id: int | None = None
+    amount: str | None = Field(default=None, max_length=20, description="Amount received")
+    income_date: date | None = Field(default=None, description="Defaults to today")
+    received_by_user_id: int | None = Field(default=None, description="Defaults to the logged-in user")
+    client_uuid: str | None = Field(default=None, min_length=8, max_length=64)
+
+
+class VintedPhotoIn(BaseModel):
+    """JPEG images in base64, resized by the client: the photo (about
+    1200 px) and its thumbnail (about 160 px)."""
+
+    image: str = Field(max_length=4_400_000)
+    thumb: str = Field(max_length=440_000)
+
+
+class VintedPurchaseOut(BaseModel):
+    expense_id: int
+    amount_cents: int
+    expense_date: date
+    merchant_name: str | None
+    paid_by_user_id: int
+    paid_by_name: str
+    payment_method: PaymentMethod
+
+
+class VintedSaleOut(BaseModel):
+    income_id: int
+    amount_cents: int
+    income_date: date
+    received_by_user_id: int
+    received_by_name: str
+
+
+class VintedItemOut(BaseModel):
+    id: int
+    title: str
+    note: str | None
+    status: VintedStatus
+    listed_on: date
+    photo: str | None = Field(description="Version token of the photo, null without one")
+    purchase: VintedPurchaseOut | None
+    sale: VintedSaleOut | None
+    gain_cents: int | None = Field(
+        description="Sale minus purchase (an item without purchase costs zero); null until sold"
+    )
+    created_by_name: str
+    created_at: str
+    updated_at: str
+
+
+class VintedSummaryOut(BaseModel):
+    """GET /vinted/summary: one month of the section, plus its calendar year."""
+
+    month: str
+    sales_cents: int = Field(description="Incomes of the month in the category vinted")
+    sales_count: int
+    expense_cents: int = Field(description="Expenses of the month in the Vinted category")
+    expense_count: int
+    purchase_count: int = Field(description="Of those, the purchases of an item")
+    extra_count: int = Field(description="Of those, the ones without an item: supplies, promotions")
+    balance_cents: int = Field(description="sales_cents - expense_cents; may be negative")
+    sold_count: int = Field(description="Items whose sale falls in the month")
+    sold_cents: int
+    sold_cost_cents: int = Field(description="What those items cost (zero for things already at home)")
+    gain_cents: int = Field(description="sold_cents - sold_cost_cents")
+    year: int
+    year_sales_count: int = Field(description="Vinted incomes of the calendar year (DAC7: 30 sales)")
+    year_sales_cents: int = Field(description="Their total (DAC7: 2,000 EUR)")
 
 
 class MessageOut(BaseModel):

@@ -86,6 +86,15 @@ export const api = {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   },
 
+  // A Vinted photo, already resized: a few hundred KB, so a longer wait on
+  // a slow mobile connection than the usual 15 seconds.
+  async uploadPhoto(itemId, photo) {
+    return jsonOf(await request('PUT', `/vinted/items/${itemId}/photo`, {
+      json: { image: photo.image, thumb: photo.thumb },
+      timeout: 60000,
+    }));
+  },
+
   async restore(file) {
     return jsonOf(await request('POST', '/restore', {
       body: file,

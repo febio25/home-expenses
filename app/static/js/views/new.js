@@ -5,7 +5,7 @@ import { api } from '../api.js';
 import { state, loadUsers, loadCategories, loadMerchants, local } from '../store.js';
 import { createExpenseForm } from '../expense-form.js';
 import {
-  h, toast, dismissToasts, vibrate, formatEuro, loadingBlock, errorBlock, newUuid, todayIso,
+  h, mainHead, toast, dismissToasts, vibrate, formatEuro, loadingBlock, errorBlock, newUuid, todayIso,
 } from '../ui.js';
 
 const DRAFT_KEY = 'draft';
@@ -170,9 +170,7 @@ export async function mount(root, ctx) {
 
   root.classList.add('view-new');
   root.replaceChildren(
-    h('header', { class: 'page-head' },
-      h('h1', { class: 'page-title' }, 'Nuova spesa'),
-      h('span', { class: 'page-who' }, state.me.display_name)),
+    mainHead('Nuova spesa', state.me.display_name),
     dueBanner,
     form.element,
     h('div', { class: 'footer-bar' }, errorBanner, saveButton));

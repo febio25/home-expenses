@@ -33,10 +33,26 @@ esposta su internet.
   cambiando l'importo se serve. Nulla viene registrato in automatico.
   Si gestiscono da *Impostazioni → Ricorrenti*; il promemoria compare in
   Nuova spesa e, per le entrate, anche nella lista delle entrate.
+- Sezione *Vinted* (dalla 0.8.0), nella barra in basso: un articolo per ogni
+  cosa messa in vendita, comprata per rivenderla o già di casa, con una foto
+  facoltativa (miniatura nella lista, tocco per vederla grande). L'articolo
+  non contiene importi: punta alla spesa d'acquisto (categoria *Vinted*) e
+  all'entrata della vendita (categoria di entrata *Vinted*), che restano
+  normali movimenti e finiscono nei rispettivi CSV. Il guadagno è vendita
+  meno acquisto; per le cose già di casa, l'intera vendita. In *Vinted →
+  Riepilogo*: vendite, spese Vinted e differenza del mese, guadagno sugli
+  articoli venduti, istogramma degli ultimi 6 mesi e conteggio dell'anno
+  rispetto alle soglie DAC7 (indicativo). Gli acquisti personali fatti su
+  Vinted restano spese della loro categoria (Abbigliamento, Casa e utenze…);
+  i costi extra (buste, spedizioni) sono spese *Vinted* senza articolo.
+- *Impostazioni* si apre dall'icona a ingranaggio in alto a destra, accanto
+  al nome, nelle schermate Nuova spesa, Movimenti, Riepilogo e Vinted.
 - Gestione di categorie ed esercenti (rinomina, disattiva, unisci i doppioni).
+  La categoria *Vinted* serve alla sezione: si può rinominare ma non
+  disattivare né eliminare.
 - Export CSV per mese o intervallo, in due formati: un file per le spese e
-  uno per le entrate.
-- Backup e ripristino dell'intero database.
+  uno per le entrate; più un file con tutti gli articoli Vinted.
+- Backup e ripristino dell'intero database, foto degli articoli comprese.
 - Due utenti con password propria, stessi dati per entrambi.
 
 Nessuna chiamata esterna: niente CDN, font o telemetria. Tutto è servito dal
@@ -280,7 +296,8 @@ variano da un produttore all'altro.
    - l'icona «Spese» compare nel cassetto delle app;
    - aprendola parte a schermo intero, senza barra degli indirizzi, sulla
      schermata Nuova spesa;
-   - la pressione lunga sull'icona mostra **Nuova spesa** e **Movimenti**.
+   - la pressione lunga sull'icona mostra **Nuova spesa**, **Movimenti** e
+     **Vinted**.
 
 L'accesso dura 90 giorni e si rinnova a ogni utilizzo.
 
@@ -292,25 +309,36 @@ ricarica la pagina una volta e riprova.
 
 ### Su Umbrel
 
-Esempio con la versione `0.7.0`.
+Esempio con la versione `0.8.0`.
 
 1. Nel repository `home-expenses` la versione in `app/__init__.py`
    (`__version__`) deve essere quella nuova. Fai commit e push.
 2. Crea e invia il tag:
 
    ```bash
-   git tag v0.7.0 && git push origin v0.7.0
+   git tag v0.8.0 && git push origin v0.8.0
    ```
 
-3. In **Actions** apri l'esecuzione «Release image» e, alla fine, copia la
-   riga `image: …@sha256:…` dal riepilogo.
-4. Nel repository `umbrel-app-store` sostituisci la riga con un comando
-   (incollandola a mano con TextEdit si può perdere l'andata a capo). Incolla
-   la riga copiata tra gli apici di `LINE`:
+3. Quando in **Actions** l'esecuzione «Release image» è finita in verde
+   (2–3 minuti), leggi il digest dell'immagine dal registro:
+
+   ```bash
+   TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:febio25/home-expenses:pull" | sed -E 's/.*"token":"([^"]+)".*/\1/')
+   DIGEST=$(curl -sI -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json" https://ghcr.io/v2/febio25/home-expenses/manifests/0.8.0 | grep -i docker-content-digest | awk '{print $2}' | tr -d '\r')
+   echo "$DIGEST"
+   ```
+
+   Deve comparire `sha256:` seguito da 64 caratteri: è il digest dell'indice
+   multi-arch, quello che serve a Umbrel. Se non compare nulla, l'immagine
+   non è pubblicata. Non usare il digest dei file tra gli «Artifacts» del
+   workflow: è un file di build, non l'immagine.
+4. Nella stessa finestra del Terminale, nel repository `umbrel-app-store`
+   sostituisci la riga con un comando (incollandola a mano con TextEdit si
+   può perdere l'andata a capo):
 
    ```bash
    cd umbrel-app-store
-   LINE='image: ghcr.io/febio25/home-expenses:0.7.0@sha256:INCOLLA_QUI'
+   LINE="image: ghcr.io/febio25/home-expenses:0.8.0@${DIGEST}"
    sed -i '' "s|^    image: ghcr.io/febio25/home-expenses:.*|    ${LINE}|" tallynest-expenses/docker-compose.yml
    grep -n -A1 "image:" tallynest-expenses/docker-compose.yml
    ```
@@ -325,6 +353,23 @@ Esempio con la versione `0.7.0`.
 Il database è in `${APP_DATA_DIR}/data` e non viene toccato. All'avvio l'app
 applica da sola le eventuali modifiche allo schema. Le app installate sui
 telefoni si aggiornano alla seconda apertura dopo l'aggiornamento del server.
+Le novità del manifest (per esempio la scorciatoia **Vinted** della 0.8.0)
+arrivano quando Chrome aggiorna l'app installata. Da Chrome 144 non c'è più
+il limite di un controllo al giorno (fonte: Chrome for Developers, «A better
+way to update your web apps»); con versioni precedenti può volerci fino a un
+giorno. Se dopo qualche apertura la scorciatoia non compare: chiudi l'app,
+apri `about://webapks` in Chrome, tocca **Update** sotto l'app, poi aprila e
+chiudila una volta; di solito in pochi minuti lo stato diventa «Successful»
+(fonte: web.dev, «How Chrome handles updates to the web app manifest»).
+
+Dalla 0.7.0 alla 0.8.0, al primo avvio: se esiste già una categoria di spesa
+chiamata «Vinted» (fatta a mano, maiuscole e minuscole non contano) diventa
+la categoria della sezione, con le sue spese, e viene riattivata se era
+disattivata; altrimenti viene creata. Le spese già registrate lì restano
+come sono e si collegano agli articoli da *Nuovo articolo → Scegli una spesa
+già registrata*; le vendite già registrate in *Vendite* si collegano da
+*Segna come venduto → Scegli un'entrata già registrata* e passano alla
+categoria di entrata *Vinted*.
 
 Consiglio: scarica un backup dall'app prima di aggiornare.
 
@@ -339,10 +384,18 @@ docker compose up -d --build
 
 - **Backup:** *Impostazioni → Backup e ripristino → Scarica backup*. È un unico
   file SQLite (`spese-backup-AAAAMMGG-HHMM.db`) con tutti i dati (spese,
-  entrate, ricorrenti, categorie, esercenti), compresi gli utenti e le loro
-  password in forma protetta (hash). Conservalo in un posto sicuro. I backup
-  delle versioni precedenti si ripristinano: le tabelle aggiunte dopo
-  (spese ricorrenti, entrate, entrate ricorrenti) vengono create vuote.
+  entrate, ricorrenti, categorie, esercenti, articoli Vinted con le foto),
+  compresi gli utenti e le loro password in forma protetta (hash). Conservalo
+  in un posto sicuro. I backup delle versioni precedenti si ripristinano: le
+  tabelle aggiunte dopo (spese ricorrenti, entrate, entrate ricorrenti,
+  articoli Vinted) vengono create vuote e la categoria *Vinted* viene adottata
+  o creata come all'aggiornamento. Un backup fatto con la 0.8.0 non si
+  ripristina sulle versioni precedenti: l'app lo rifiuta con «Il backup viene
+  da una versione più recente dell'app».
+- **Dimensioni:** le foto sono salvate nel database, ridotte dal telefono a
+  1200 pixel sul lato lungo (JPEG, al massimo 3 MB l'una) più una miniatura:
+  il backup cresce con il numero di foto. Il ripristino accetta file fino a
+  512 MB.
 - **Ripristino:** stessa schermata, *Ripristina da file…*. Sostituisce tutti i
   dati con quelli del file, utenti e password compresi. L'app controlla che il
   file sia un backup integro prima di toccare qualcosa e salva una copia dei
@@ -462,11 +515,29 @@ Stessa schermata, scegliendo *Entrate*: un file a parte
 Il CSV delle spese non cambia.
 
 Colonne: `data` (AAAA-MM-GG), `importo`, `categoria` (Stipendio, Rimborsi,
-Regali, Vendite, Altro, Buoni pasto), `nota`, `ricevuto_da`, `inserito_da`,
-`creato_il` (UTC, ISO 8601).
+Regali, Vendite, Vinted, Altro, Buoni pasto), `nota`, `ricevuto_da`,
+`inserito_da`, `creato_il` (UTC, ISO 8601).
 
 La lista delle categorie di entrata è fissa (in `app/schemas.py`,
 `INCOME_CATEGORIES`): per cambiarla serve una nuova versione dell'app.
+
+### Articoli Vinted
+
+Stessa schermata, scegliendo *Articoli Vinted*: un file con tutti gli
+articoli, senza scelta del periodo (`vinted_articoli.csv`,
+`vinted_articoli_excel.csv`), negli stessi due formati.
+
+Colonne: `articolo`, `stato` (In vendita, Venduto, Ritirato),
+`data_acquisto` e `prezzo_acquisto` (vuoti per le cose già di casa),
+`data_vendita` e `prezzo_vendita` (vuoti finché non è venduto), `guadagno`
+(vendita meno acquisto; per le cose già di casa l'intera vendita; vuoto
+finché non è venduto), `giorni_in_vendita` (fino alla vendita o a oggi;
+vuoto per gli articoli ritirati), `nota`, `inserito_da`, `creato_il` (UTC,
+ISO 8601).
+
+Gli importi degli articoli sono anche nei CSV di spese ed entrate, con
+categoria *Vinted*: il file degli articoli aggiunge il legame tra acquisto e
+vendita, non altri soldi.
 
 ## API
 
@@ -495,7 +566,8 @@ CDN.
 - Entrate: `GET/POST /api/v1/incomes` (filtri `month`, oppure `from` e `to`;
   `client_uuid` come per le spese), `GET/PATCH/DELETE /api/v1/incomes/{id}` e
   `GET /api/v1/incomes/categories` (la lista fissa: `salary`, `refund`,
-  `gift`, `sale`, `other`, `meal_voucher`, con i nomi in italiano). Export:
+  `gift`, `sale`, `vinted`, `other`, `meal_voucher`, con i nomi in
+  italiano). Export:
   `GET /api/v1/export/incomes.csv`, con gli stessi filtri e formati di
   `/export.csv`.
 - Entrate ricorrenti: stessi endpoint e stesse regole delle spese ricorrenti
@@ -511,6 +583,22 @@ CDN.
   `by_category`, dalla più grande). `GET /api/v1/summary/trend?month=AAAA-MM&months=6`
   restituisce i totali di entrate (con `voucher_cents`) e spese di ogni mese
   della finestra (da 1 a 24 mesi, il più vecchio per primo), anche quelli vuoti.
+- Vinted (0.8.0), sotto `/api/v1/vinted`: `GET/POST /items` (filtro
+  `status`: `listed`, `sold`, `withdrawn`; `client_uuid` come per le spese),
+  `GET/PATCH/DELETE /items/{id}` (la PATCH cambia titolo, nota e ritiro;
+  la DELETE elimina anche la spesa e l'entrata collegate), `POST
+  /items/{id}/purchase` e `POST /items/{id}/sale` (creano la spesa o
+  l'entrata, oppure collegano una già registrata con `expense_id` o
+  `income_id`), `DELETE /items/{id}/sale` (annulla la vendita eliminando
+  l'entrata), `PUT/DELETE /items/{id}/photo` (JPEG in base64, già ridotto
+  dal client) e `GET /items/{id}/photo` e `/photo/thumb`, `GET
+  /unlinked-expenses` e `/unlinked-incomes` (cosa si può collegare), `GET
+  /summary?month=AAAA-MM` e `/summary/trend?month=AAAA-MM&months=6`. Le
+  spese e le entrate collegate riportano `vinted_item_id` e
+  `vinted_item_title`; la loro categoria non si può cambiare. Le categorie
+  hanno `system_key` (`vinted` per quella della sezione, altrimenti `null`).
+  Export: `GET /api/v1/export/vinted.csv`, con gli stessi formati di
+  `/export.csv` e senza filtri di data.
 
 ## Sviluppo
 
@@ -542,7 +630,7 @@ app/
   cli.py           strumenti di recupero (reimpostazione password)
   routers/         endpoint: auth, expenses, incomes, recurring,
                    recurring_incomes, categories, merchants, summary,
-                   export, backup
+                   vinted, export, backup
   static/          frontend (HTML, CSS, JavaScript, manifest, service worker)
 tests/             test automatici (pytest)
 scripts/           generazione delle icone

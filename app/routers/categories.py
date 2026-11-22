@@ -13,7 +13,7 @@ from ..security import current_user
 router = APIRouter(prefix="/categories", tags=["categories"], dependencies=[Depends(current_user)])
 
 _SELECT = (
-    "SELECT c.id, c.name, c.sort_order, c.is_active,"
+    "SELECT c.id, c.name, c.sort_order, c.is_active, c.system_key,"
     " (SELECT COUNT(*) FROM expenses e WHERE e.category_id = c.id) AS expense_count"
     " FROM categories c"
 )
@@ -31,6 +31,15 @@ def _fetch(db: sqlite3.Connection, category_id: int) -> sqlite3.Row:
     if row is None:
         raise HTTPException(status_code=404, detail="Categoria non trovata.")
     return row
+
+
+def _protect_system(row: sqlite3.Row, action: str) -> None:
+    """A category the app relies on (the Vinted section) stays available."""
+    if row["system_key"] == "vinted":
+        raise HTTPException(
+            status_code=409,
+            detail=f"La categoria {row['name']} serve alla sezione Vinted: non si può {action}.",
+        )
 
 
 def _ensure_unique(db: sqlite3.Connection, name: str, exclude_id: int | None = None) -> None:
@@ -70,8 +79,11 @@ def update_category(
     """Rename, reorder, deactivate or reactivate a category.
 
     Deactivating hides it from the entry screen; past expenses keep it.
+    The Vinted category can be renamed, not deactivated.
     """
-    _fetch(db, category_id)
+    current = _fetch(db, category_id)
+    if body.is_active is False:
+        _protect_system(current, "disattivare")
     if body.name is not None:
         name = _clean(body.name)
         _ensure_unique(db, name, exclude_id=category_id)
@@ -105,6 +117,7 @@ def update_category(
 def delete_category(category_id: int, db: sqlite3.Connection = Depends(get_db)):
     """Delete a category that has never been used. Used ones can only be deactivated."""
     row = _fetch(db, category_id)
+    _protect_system(row, "eliminare")
     if row["expense_count"] > 0:
         raise HTTPException(
             status_code=409,

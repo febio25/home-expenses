@@ -12,6 +12,28 @@ function normalize(text) {
   return text.trim().replace(/\s+/g, ' ').toLocaleLowerCase('it-IT');
 }
 
+// The date part of a details summary as [lead-in, bold value]:
+//   expense:   "Oggi", "Ieri", "Il 5 nov", "L'8 nov", "Il 5 nov 2025"
+//   recurring: "Da oggi", "Dal 5 nov", "Dall'8 nov"
+// Days 1, 8 and 11 start with a vowel sound in Italian, hence the elision.
+// Shared with the Vinted purchase and sale forms (vinted-forms.js).
+export function summaryDate(iso, recurring = false) {
+  const today = todayIso();
+  if (iso === today) return recurring ? ['Da ', 'oggi'] : ['', 'Oggi'];
+  const yesterday = new Date(`${today}T12:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayIso = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+  if (!recurring && iso === yesterdayIso) return ['', 'Ieri'];
+  const date = new Date(`${iso}T12:00:00`);
+  const sameYear = iso.slice(0, 4) === today.slice(0, 4);
+  const text = date.toLocaleDateString('it-IT', sameYear
+    ? { day: 'numeric', month: 'short' }
+    : { day: 'numeric', month: 'short', year: 'numeric' });
+  const elided = [1, 8, 11].includes(date.getDate());
+  if (recurring) return [elided ? 'Dall’' : 'Dal ', text];
+  return [elided ? 'L’' : 'Il ', text];
+}
+
 export const INTERVALS = [
   { value: 1, label: 'Mese', long: 'ogni mese' },
   { value: 2, label: '2 mesi', long: 'ogni 2 mesi' },
@@ -191,27 +213,6 @@ export function createExpenseForm({
   // One full-width bar sums up the details ("Oggi, paga Nastia, carta") and
   // opens the panel with the controls. The bar is highlighted when something
   // differs from the default, so a changed date or payer is hard to miss.
-  // The date part of the summary as [lead-in, bold value]:
-  //   expense:   "Oggi", "Ieri", "Il 5 nov", "L'8 nov", "Il 5 nov 2025"
-  //   recurring: "Da oggi", "Dal 5 nov", "Dall'8 nov"
-  // Days 1, 8 and 11 start with a vowel sound in Italian, hence the elision.
-  function summaryDate(iso) {
-    const today = todayIso();
-    if (iso === today) return recurring ? ['Da ', 'oggi'] : ['', 'Oggi'];
-    const yesterday = new Date(`${today}T12:00:00`);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayIso = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-    if (!recurring && iso === yesterdayIso) return ['', 'Ieri'];
-    const date = new Date(`${iso}T12:00:00`);
-    const sameYear = iso.slice(0, 4) === today.slice(0, 4);
-    const text = date.toLocaleDateString('it-IT', sameYear
-      ? { day: 'numeric', month: 'short' }
-      : { day: 'numeric', month: 'short', year: 'numeric' });
-    const elided = [1, 8, 11].includes(date.getDate());
-    if (recurring) return [elided ? 'Dall’' : 'Dal ', text];
-    return [elided ? 'L’' : 'Il ', text];
-  }
-
   const summaryText = h('span', { class: 'more-text' });
   const summaryAction = h('span', { class: 'more-action', 'aria-hidden': 'true' });
   const bar = h('button', {
@@ -231,7 +232,7 @@ export function createExpenseForm({
   // "Oggi paga Fabio con Carta": values in bold, joining words in plain text.
   function renderDetailsSummary() {
     const payer = users.find((user) => user.id === state.paidBy);
-    const [lead, when] = summaryDate(state.date);
+    const [lead, when] = summaryDate(state.date, recurring);
     const bold = (text) => h('strong', {}, text);
     const parts = [lead, bold(when)];
     if (recurring) {

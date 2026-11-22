@@ -14,12 +14,14 @@ router = APIRouter(prefix="/merchants", tags=["merchants"], dependencies=[Depend
 
 # last_category_id: category of the most recently entered expense, offered as
 # the default the next time this merchant is picked. Inactive categories are
-# not suggested.
+# not suggested, nor the Vinted one (0.8.0): after buying an item to resell
+# on Vinted, a purchase for the house from the same merchant must start
+# without it.
 _SELECT = """
 SELECT m.id, m.name,
        (SELECT COUNT(*) FROM expenses e WHERE e.merchant_id = m.id) AS expense_count,
        (SELECT e.category_id FROM expenses e
-          JOIN categories c ON c.id = e.category_id AND c.is_active = 1
+          JOIN categories c ON c.id = e.category_id AND c.is_active = 1 AND c.system_key IS NULL
          WHERE e.merchant_id = m.id
          ORDER BY e.created_at DESC, e.id DESC LIMIT 1) AS last_category_id
   FROM merchants m

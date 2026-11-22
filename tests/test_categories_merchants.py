@@ -13,6 +13,7 @@ INITIAL = [
     "Abbonamenti",
     "Regali",
     "Varie",
+    "Vinted",  # 0.8.0: the category of the Vinted section, added by migration 005
 ]
 
 

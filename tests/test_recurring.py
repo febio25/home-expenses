@@ -180,7 +180,8 @@ def test_moving_back_to_a_clamped_date_keeps_the_day(client, categories):
 
 def test_restore_of_a_v010_backup_gets_the_new_table(client, tmp_path):
     """A backup made by v0.1.x (schema 1) restores and is migrated to the
-    latest schema (recurring templates in 2, incomes in 3, recurring incomes in 4)."""
+    latest schema (recurring templates in 2, incomes in 3, recurring incomes in 4,
+    Vinted items in 5)."""
     import sqlite3
     from pathlib import Path
 
@@ -206,8 +207,11 @@ def test_restore_of_a_v010_backup_gets_the_new_table(client, tmp_path):
     assert response.status_code == 200, response.text
     live = sqlite3.connect(get_settings().db_path)
     try:
-        assert live.execute("PRAGMA user_version").fetchone()[0] == latest_schema_version() == 4
-        for table in ("recurring_expenses", "incomes", "recurring_incomes"):
+        assert live.execute("PRAGMA user_version").fetchone()[0] == latest_schema_version() == 5
+        for table in ("recurring_expenses", "incomes", "recurring_incomes", "vinted_items", "vinted_photos"):
             assert live.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
+        assert live.execute(
+            "SELECT name FROM categories WHERE system_key = 'vinted'"
+        ).fetchall() == [("Vinted",)]
     finally:
         live.close()

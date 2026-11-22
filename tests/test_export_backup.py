@@ -217,4 +217,4 @@ def test_data_survives_a_restart(app, tmp_path):
         second.cookies.set("spese_session", token)
         assert second.get(f"{API}/auth/me").status_code == 200  # session persisted too
         assert len(second.get(f"{API}/expenses").json()) == 1
-        assert len(second.get(f"{API}/categories").json()) == 10  # seed not duplicated
+        assert len(second.get(f"{API}/categories").json()) == 11  # seed and Vinted not duplicated

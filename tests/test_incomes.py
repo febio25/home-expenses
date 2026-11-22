@@ -4,7 +4,7 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import CSRF, NASTIA, make_expense
+from tests.conftest import CSRF, NASTIA, make_expense, strip_vinted_schema
 
 API = "/api/v1"
 INCOME_HEADER = ["data", "importo", "categoria", "nota", "ricevuto_da", "inserito_da", "creato_il"]
@@ -31,6 +31,7 @@ def test_categories_are_a_fixed_list(client, anon):
         {"code": "refund", "name": "Rimborsi"},
         {"code": "gift", "name": "Regali"},
         {"code": "sale", "name": "Vendite"},
+        {"code": "vinted", "name": "Vinted"},  # 0.8.0, next to the other sales
         {"code": "other", "name": "Altro"},
         {"code": "meal_voucher", "name": "Buoni pasto"},  # 0.7.0, last as asked
     ]
@@ -370,6 +371,7 @@ def test_restore_of_a_backup_without_incomes(client, categories, tmp_path):
     conn = sqlite3.connect(old)
     conn.execute("DROP TABLE incomes")
     conn.execute("DROP TABLE recurring_incomes")  # schema 4, newer still
+    strip_vinted_schema(conn)  # schema 5
     conn.execute("PRAGMA user_version = 2")
     conn.commit()
     conn.close()
