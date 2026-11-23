@@ -1,22 +1,23 @@
 // "Annuncio" (0.10.0): the ad of a Vinted item, as it goes on Vinted (title,
-// description, asking price and the lowest one) and the details Claude
-// writes it from. "Incolla risposta di Claude" fills title, description and
-// prices from Claude's answer; nothing is saved until "Salva annuncio".
+// description, asking price and the lowest one). "Incolla risposta di
+// Claude" fills title, description and prices from Claude's answer; nothing
+// is saved until "Salva annuncio".
+//
+// 0.11.0: the details have a screen of their own ("Dettagli", step 1 of the
+// card). The title starts from the item's name when the ad has none of its
+// own, and stays "none of its own" while it is left like that.
 
 import { api } from '../api.js';
 import { h, toast, vibrate, centsToInput, loadingBlock, errorBlock } from '../ui.js';
 import { itemPath } from './vinted.js';
-import {
-  loadListingOptions, detailsFields, readAnswer, takeAnswer, priceInput,
-} from '../vinted-listing.js';
+import { readAnswer, takeAnswer, priceInput } from '../vinted-listing.js';
 
 export async function mount(root, ctx) {
   const itemId = Number(ctx.params[0]);
   root.append(loadingBlock());
   let item;
-  let options;
   try {
-    [item, options] = await Promise.all([api.get(`/vinted/items/${itemId}`), loadListingOptions()]);
+    item = await api.get(`/vinted/items/${itemId}`);
   } catch (error) {
     if (!ctx.isCurrent()) return;
     if (error.status === 404) {
@@ -37,7 +38,7 @@ export async function mount(root, ctx) {
 
   const titleInput = h('input', {
     class: 'input', id: 'listing-title', type: 'text', maxLength: 200, autocomplete: 'off',
-    autocapitalize: 'sentences', value: listing.title || '', placeholder: 'Es. Giacca jeans Levi’s taglia M',
+    autocapitalize: 'sentences', value: listing.effective_title, placeholder: item.title,
     enterkeyhint: 'next', oninput: hideError,
   });
   const descriptionInput = h('textarea', {
@@ -47,7 +48,6 @@ export async function mount(root, ctx) {
   const priceField = priceInput('listing-price', listing.price_cents);
   const minField = priceInput('listing-min', listing.min_price_cents, 'Es. 18');
   const priceError = h('p', { class: 'field-error', hidden: true });
-  const details = detailsFields({ options, details: item.details, idPrefix: 'listing' });
 
   // Fill the form with what was recognised in Claude's answer.
   function apply(answer) {
@@ -78,12 +78,14 @@ export async function mount(root, ctx) {
     hideError();
     priceError.hidden = true;
     saveButton.disabled = true;
+    // The item's name is the default title: kept as "no title of its own",
+    // so a rename in the app still reaches the ad.
+    const title = titleInput.value.trim().replace(/\s+/g, ' ');
     const payload = {
-      listing_title: titleInput.value.trim() || null,
+      listing_title: title && title !== item.title ? title : null,
       listing_description: descriptionInput.value.trim() || null,
       price: priceField.value.trim() || null,
       min_price: minField.value.trim() || null,
-      ...details.toPayload(),
     };
     try {
       await api.patch(`/vinted/items/${itemId}`, payload);
@@ -127,9 +129,7 @@ export async function mount(root, ctx) {
       priceError,
       item.status === 'listed'
         ? h('p', { class: 'form-hint' }, 'È già su Vinted: un prezzo nuovo entra nello storico dei prezzi.')
-        : null,
-      h('h2', { class: 'section-title' }, 'Dettagli dell’articolo'),
-      details.element),
+        : null),
     h('div', { class: 'footer-bar' }, errorBanner, saveButton));
 
   const answer = takeAnswer(); // pasted from the item's screen just before

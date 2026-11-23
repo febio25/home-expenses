@@ -82,6 +82,27 @@ class MerchantMerge(BaseModel):
     into_id: int
 
 
+class MerchantDistinctIn(BaseModel):
+    """Two merchants that look alike but are different places (0.11.0)."""
+
+    other_id: int
+
+
+MerchantDuplicateReason = Literal["same", "contained", "similar"]
+
+
+class MerchantDuplicateOut(BaseModel):
+    """A possible duplicate (0.11.0): two merchants with names that look
+    alike, the one with more expenses first."""
+
+    reason: MerchantDuplicateReason = Field(
+        description="same: the same name written differently; contained: one name inside the other;"
+        " similar: one letter apart"
+    )
+    reason_name: str = Field(description="The reason in Italian, to show")
+    merchants: list[MerchantOut] = Field(min_length=2, max_length=2)
+
+
 # --- expenses -----------------------------------------------------------
 
 class ExpenseCreate(BaseModel):
@@ -407,7 +428,7 @@ class VintedPurchaseIn(BaseModel):
     expense_id: int | None = Field(default=None, description="An expense of the Vinted category, not linked yet")
     amount: str | None = Field(default=None, max_length=20, description="Total paid: price, shipping, fees")
     expense_date: date | None = None
-    merchant: str | None = Field(default="Vinted", max_length=80, description="Where it was bought")
+    merchant: str | None = Field(default=None, max_length=80, description="Where it was bought (none by default, 0.11.0)")
     paid_by_user_id: int | None = Field(default=None, description="Defaults to the logged-in user")
     payment_method: PaymentMethod = "card"
 
@@ -579,7 +600,8 @@ class VintedPriceChangeOut(BaseModel):
 
 
 class VintedListingOut(BaseModel):
-    title: str | None
+    title: str | None = Field(description="The ad's own title, or null: then the item's name is used")
+    effective_title: str = Field(description="The title to put on Vinted: the ad's own, else the item's name")
     description: str | None
     price_cents: int | None = Field(description="Asking price now")
     min_price_cents: int | None

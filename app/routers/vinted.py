@@ -156,6 +156,8 @@ def item_out(row: sqlite3.Row, price_changes: list[dict] | None = None) -> dict:
         },
         "listing": {
             "title": row["listing_title"],
+            # 0.11.0: without a title of its own, the ad uses the item's name.
+            "effective_title": row["listing_title"] or row["title"],
             "description": row["listing_description"],
             "price_cents": row["price_cents"],
             "min_price_cents": row["min_price_cents"],
@@ -602,7 +604,14 @@ def listing_request(
 def listing_parse(body: VintedListingParseIn, user: sqlite3.Row = Depends(current_user)):
     """Read Claude's answer: title, description, price, minimum and the
     things to check. Saves nothing; never fails on an answer out of format
-    (then the whole text is the description)."""
+    (then the whole text is the description). The request itself, pasted
+    by mistake (it is still on the clipboard after «Condividi con Claude»),
+    is refused: its example would fill the form with someone else's ad."""
+    if vinted_listing.is_request(body.text):
+        raise HTTPException(
+            status_code=422,
+            detail="Questa è la richiesta per Claude, non la sua risposta: copia la risposta di Claude e riprova.",
+        )
     parsed = vinted_listing.parse_answer(body.text)
     if parsed["title"]:
         parsed["title"] = parsed["title"][: VINTED_TEXT_LIMITS["listing_title"]]

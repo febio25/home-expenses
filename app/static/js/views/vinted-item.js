@@ -7,6 +7,12 @@
 // "Segna come venduto" in its sale card. The "Annuncio" card holds the ad
 // written with Claude: share the request, paste the answer, copy the text
 // for Vinted, change the asking price (vinted-listing.js).
+//
+// 0.11.0: the "Annuncio" card follows the item's life. Before Claude, three
+// numbered steps (details, ask Claude, paste the answer); with the ad
+// written (a description saved), the text to copy to Vinted and a reminder
+// to mark it published; on sale, the price on Vinted first; sold or
+// withdrawn, only what was written, and nothing when there is nothing.
 
 import { api } from '../api.js';
 import {
@@ -16,7 +22,8 @@ import {
 import { thumbButton, choosePhotoFor } from '../photo.js';
 import { itemPath, dayMonth, sinceLabel, daysBetween, gainSpan, captionOf, waitingSince } from './vinted.js';
 import {
-  shareWithClaude, copyRequest, savePhoto, readAnswer, keepAnswer, copyText, detailsSummary, priceInput,
+  shareWithClaude, copyRequest, prepareRequest, forgetRequest, readAnswer, keepAnswer, copyText, detailsSummary,
+  detailsProgress, detailChips, detailsExtra, priceInput,
 } from '../vinted-listing.js';
 
 function statusText(item) {
@@ -249,6 +256,7 @@ export async function mount(root, ctx) {
     const answer = await readAnswer();
     if (!answer || !ctx.isCurrent()) return;
     keepAnswer(answer); // the listing screen opens filled in, to check and save
+    asking = false;
     ctx.navigate(`${itemPath(itemId)}/annuncio`);
   }
 
@@ -263,55 +271,167 @@ export async function mount(root, ctx) {
     toast(`Nuovo prezzo: ${formatEuro(item.listing.price_cents)}.`, { kind: 'success' });
   }
 
+  // "Chiedi di nuovo" / "Chiedi a Claude un prezzo nuovo": the steps again,
+  // over an ad already written, until the answer is pasted or "Annulla".
+  let asking = false;
+  const listingPath = `${itemPath(itemId)}/annuncio`;
+  const detailsPath = `${itemPath(itemId)}/dettagli`;
+  const textButton = (label, onclick) => h('button', { class: 'btn-text', type: 'button', onclick }, label);
+  const link = (label, href, extra = '') => h('a', { class: `btn-text${extra}`, href, dataset: { link: '' } }, label);
+  const stepButton = (label, iconName, primary, onclick) => h('button', {
+    class: `btn btn-block step-btn ${primary ? 'btn-primary' : 'btn-quiet'}`, type: 'button', onclick,
+  }, icon(iconName), label);
+
+  function priceMeta(listing) {
+    const meta = [];
+    const changes = listing.price_changes.length - 1;
+    if (listing.price_changes.length) {
+      meta.push(`partito da ${formatEuro(listing.start_price_cents)} il ${dayMonth(listing.price_changes[0].changed_on)}`);
+    }
+    if (changes > 0) meta.push(changes === 1 ? '1 cambio di prezzo' : `${changes} cambi di prezzo`);
+    if (listing.min_price_cents) meta.push(`minimo ${formatEuro(listing.min_price_cents)}`);
+    return meta.join(' · ');
+  }
+
+  // A text of the ad with its "Copia"; a long description is cut at three
+  // lines, with "Mostra tutto".
+  function textRow(label, text, copyLabel, { clamp = false, copy = true } = {}) {
+    const value = h('span', { class: clamp ? 'listing-desc is-clamped' : 'listing-value' }, text);
+    let more = null;
+    if (clamp && (text.length > 140 || text.split('\n').length > 3)) {
+      more = h('button', {
+        class: 'btn-text btn-text-start', type: 'button',
+        onclick: () => {
+          const open = value.classList.toggle('is-clamped') === false;
+          more.textContent = open ? 'Mostra meno' : 'Mostra tutto';
+        },
+      }, 'Mostra tutto');
+    }
+    return h('div', { class: 'info' },
+      h('span', { class: 'info-main' },
+        h('span', { class: 'info-label' }, label), value, more),
+      copy ? textButton('Copia', () => copyText(text, copyLabel)) : null);
+  }
+
+  function step(number, done, title, ...body) {
+    return h('div', { class: 'info step' },
+      h('span', { class: `step-num${done ? ' is-done' : ''}`, 'aria-hidden': 'true' }, done ? icon('check') : String(number)),
+      h('div', { class: 'step-main' },
+        h('span', { class: 'sr-only' }, done ? 'Fatto: ' : `Passo ${number}: `),
+        ...(Array.isArray(title) ? title : [h('span', { class: 'step-title' }, title)]),
+        ...body));
+  }
+
+  function stepsCard() {
+    const listing = item.listing;
+    const details = item.details;
+    const progress = detailsProgress(details);
+    const ready = progress.state === 'complete';
+    const rows = [];
+    if (item.status === 'listed') {
+      rows.push(h('div', { class: 'info' },
+        h('span', { class: 'info-main' },
+          h('span', { class: 'info-text' }, 'È già in vendita'),
+          h('span', { class: 'info-meta' }, 'Claude proporrà anche un prezzo aggiornato.'))));
+    }
+    if (ready) {
+      const extra = detailsExtra(details);
+      rows.push(step(1, true,
+        [h('span', { class: 'step-head' },
+          h('span', { class: 'step-title' }, 'Dettagli compilati'), link('Modifica', detailsPath))],
+        h('span', { class: 'detail-chips' }, detailChips(details).map((text) => h('span', { class: 'detail-chip' }, text))),
+        extra ? h('span', { class: 'step-text' }, extra) : null));
+    } else if (progress.state === 'partial') {
+      rows.push(step(1, false, 'Completa i dettagli',
+        h('span', { class: 'step-text' }, detailsSummary(details) || 'Prezzi simili indicati'),
+        h('span', { class: 'step-text step-missing' }, `Mancano: ${progress.missing.join(', ')}.`),
+        stepButton('Completa i dettagli', 'pencil', true, () => ctx.navigate(detailsPath))));
+    } else {
+      rows.push(step(1, false, 'Compila i dettagli',
+        h('span', { class: 'step-text' }, 'Tipo, marca, taglia, stato, misure, difetti: più ne scrivi, meno Claude deve indovinare.'),
+        stepButton('Aggiungi dettagli', 'pencil', true, () => ctx.navigate(detailsPath))));
+    }
+    rows.push(step(2, false, 'Chiedi a Claude',
+      h('span', { class: 'step-text' }, item.photo
+        ? 'Copia la richiesta e condivide la foto: in Claude tieni premuto nella chat e scegli «Incolla».'
+        : 'Condivide la richiesta: scegli l’app Claude e invia.'),
+      stepButton('Condividi con Claude', 'share', ready, () => shareWithClaude(item)),
+      h('span', { class: 'step-text step-alt' },
+        item.photo ? 'Senza foto? ' : 'Oppure ', textButton(item.photo ? 'Copia solo la richiesta' : 'copia la richiesta', () => copyRequest(item)))));
+    rows.push(step(3, false, 'Incolla la risposta',
+      h('span', { class: 'step-text' }, 'Copia la risposta di Claude e torna qui.'),
+      stepButton('Incolla risposta di Claude', 'clipboard', false, pasteAnswer)));
+    rows.push(h('div', { class: 'info info-center' }, asking
+      ? textButton('Annulla', () => { asking = false; draw(); })
+      : link(listing.description || listing.price_cents ? 'Modifica annuncio' : 'Oppure scrivi l’annuncio tu', listingPath)));
+    return h('div', { class: 'card listing-card' }, ...rows);
+  }
+
+  function priceRow(listing, { change = false } = {}) {
+    if (!listing.price_cents) {
+      return h('div', { class: 'info' },
+        h('span', { class: 'info-main' },
+          h('span', { class: 'info-label' }, 'Prezzo su Vinted'),
+          h('span', { class: 'info-meta' }, 'Non indicato')),
+        change ? textButton('Imposta', changePrice) : null);
+    }
+    const meta = priceMeta(listing);
+    return h('div', { class: 'info' },
+      h('span', { class: 'info-main' },
+        h('span', { class: 'info-label' }, change ? 'Prezzo su Vinted' : 'Prezzo'),
+        h('span', { class: 'info-figure' }, formatEuro(listing.price_cents)),
+        meta ? h('span', { class: 'info-meta' }, meta) : null),
+      change ? textButton('Cambia', changePrice) : null);
+  }
+
+  // Written, not on Vinted yet: the text to copy, then "Segna come pubblicato".
+  function readyCard() {
+    const listing = item.listing;
+    return h('div', { class: 'card listing-card' },
+      h('div', { class: 'info' },
+        h('p', { class: 'listing-reminder' },
+          'Su Vinted: crea l’annuncio, incolla titolo e descrizione, metti il prezzo. Poi qui sotto «Segna come pubblicato».')),
+      textRow('Titolo', listing.effective_title, 'Titolo copiato.'),
+      textRow('Descrizione', listing.description, 'Descrizione copiata.', { clamp: true }),
+      listing.price_cents ? priceRow(listing) : null,
+      h('div', { class: 'info info-center listing-links' },
+        link('Modifica annuncio', listingPath),
+        textButton('Chiedi di nuovo', () => { asking = true; draw(); })));
+  }
+
+  // On Vinted: the price first, to change it when it changes on Vinted.
+  function onSaleCard() {
+    const listing = item.listing;
+    return h('div', { class: 'card listing-card' },
+      priceRow(listing, { change: true }),
+      textRow('Titolo', listing.effective_title, 'Titolo copiato.'),
+      textRow('Descrizione', listing.description, 'Descrizione copiata.', { clamp: true }),
+      h('div', { class: 'info info-center' },
+        h('span', { class: 'step-text' }, 'Non si vende? ',
+          textButton('Chiedi a Claude un prezzo nuovo', () => { asking = true; draw(); }))),
+      h('div', { class: 'info info-center' }, link('Modifica annuncio', listingPath)));
+  }
+
+  // Sold or withdrawn: what was written, nothing to ask.
+  function closedCard() {
+    const listing = item.listing;
+    return h('div', { class: 'card listing-card' },
+      textRow('Titolo', listing.effective_title, 'Titolo copiato.', { copy: false }),
+      listing.description ? textRow('Descrizione', listing.description, '', { clamp: true, copy: false }) : null,
+      listing.price_cents ? priceRow(listing) : null,
+      h('div', { class: 'info info-center' }, link('Modifica annuncio', listingPath)));
+  }
+
+  // The card, or null when there is nothing to show (sold or withdrawn
+  // without an ad).
   function listingCard() {
     const listing = item.listing;
     const active = item.status === 'unlisted' || item.status === 'listed';
-    const textButton = (label, onclick) => h('button', { class: 'btn-text', type: 'button', onclick }, label);
-    const rows = [];
-    if (listing.title || listing.description) {
-      rows.push(h('div', { class: 'info' },
-        h('span', { class: 'info-main' },
-          h('span', { class: 'info-text' }, listing.title || 'Senza titolo'),
-          listing.description ? h('span', { class: 'listing-desc' }, listing.description) : null)));
-      rows.push(h('div', { class: 'info info-split listing-links' },
-        listing.title ? textButton('Copia titolo', () => copyText(listing.title, 'Titolo copiato.')) : null,
-        listing.description
-          ? textButton('Copia descrizione', () => copyText(listing.description, 'Descrizione copiata.')) : null));
-    } else {
-      rows.push(h('div', { class: 'info' },
-        h('span', { class: 'info-main' },
-          h('span', { class: 'info-text' }, 'Ancora nessun annuncio'),
-          h('span', { class: 'info-meta' }, active
-            ? 'Condividi la richiesta con Claude, poi incolla qui la sua risposta.'
-            : 'Nessun testo salvato.'))));
+    if (!active) {
+      return listing.title || listing.description || listing.price_cents ? closedCard() : null;
     }
-    if (listing.price_cents) {
-      const meta = [];
-      if (listing.min_price_cents) meta.push(`minimo ${formatEuro(listing.min_price_cents)}`);
-      const changes = listing.price_changes.length - 1;
-      if (changes > 0) {
-        meta.push(`partito da ${formatEuro(listing.start_price_cents)}, ${changes === 1 ? '1 cambio' : `${changes} cambi`}`);
-      }
-      rows.push(h('div', { class: 'info info-split' },
-        h('span', { class: 'info-main' },
-          h('span', { class: 'info-figure' }, formatEuro(listing.price_cents)),
-          meta.length ? h('span', { class: 'info-meta' }, meta.join(' · ')) : null),
-        item.status === 'listed' ? textButton('Cambia prezzo', changePrice) : null));
-    }
-    const summary = detailsSummary(item.details);
-    rows.push(h('div', { class: 'info info-split' },
-      h('span', { class: 'info-main' },
-        h('span', { class: 'info-meta' }, summary || 'Nessun dettaglio: marca, taglia e stato aiutano Claude.'))));
-    rows.push(h('div', { class: 'info info-split info-stack' },
-      active ? h('button', {
-        class: 'btn btn-quiet btn-block btn-claude', type: 'button', onclick: () => shareWithClaude(item),
-      }, 'Condividi con Claude') : null,
-      h('div', { class: 'listing-links' },
-        active ? textButton('Copia richiesta', () => copyRequest(item)) : null,
-        active && item.photo ? textButton('Salva foto', () => savePhoto(item)) : null,
-        active ? textButton('Incolla risposta', pasteAnswer) : null,
-        h('a', { class: 'btn-text', href: `${itemPath(itemId)}/annuncio`, dataset: { link: '' } }, 'Modifica'))));
-    return h('div', { class: 'card' }, ...rows);
+    if (!listing.description || asking) return stepsCard();
+    return item.status === 'unlisted' ? readyCard() : onSaleCard();
   }
 
   // --- purchase ------------------------------------------------------------------------
@@ -426,6 +546,9 @@ export async function mount(root, ctx) {
   }
 
   function draw() {
+    const active = item.status === 'unlisted' || item.status === 'listed';
+    if (active) prepareRequest(item).catch(() => {}); // ready for "Condividi con Claude"
+    const listing = listingCard();
     const withdraw = item.status === 'sold' ? null : h('button', {
       class: 'btn btn-quiet', type: 'button',
       onclick: () => run(() => api.patch(`/vinted/items/${itemId}`, { is_withdrawn: item.status !== 'withdrawn' }),
@@ -434,7 +557,7 @@ export async function mount(root, ctx) {
     content.replaceChildren(
       hero(),
       h('h2', { class: 'section-title' }, 'Su Vinted'), vintedCard(),
-      h('h2', { class: 'section-title' }, 'Annuncio'), listingCard(),
+      listing ? h('h2', { class: 'section-title' }, 'Annuncio') : null, listing,
       h('h2', { class: 'section-title' }, 'Acquisto'), purchaseCard(),
       h('h2', { class: 'section-title' }, 'Vendita'), saleCard(),
       h('h2', { class: 'section-title' }, 'Nota'),
@@ -456,6 +579,7 @@ export async function mount(root, ctx) {
       }, 'Segna come venduto'));
   }
 
-  ctx.onResume(({ longAway }) => { if (longAway) reload(); });
+  ctx.onResume(({ longAway }) => { if (longAway) { forgetRequest(); reload(); } });
+  forgetRequest(); // the purchase or the photo may have changed elsewhere
   draw();
 }

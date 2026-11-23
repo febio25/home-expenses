@@ -156,7 +156,7 @@ def test_item_bought_to_resell(client, categories):
     assert item["photo"] is None and item["sale"] is None and item["gain_cents"] is None
     purchase = item["purchase"]
     assert purchase["amount_cents"] == 1200
-    assert purchase["merchant_name"] == "Vinted"  # default merchant
+    assert purchase["merchant_name"] is None  # no merchant unless given (0.11.0; "Vinted" before)
     assert (purchase["paid_by_name"], purchase["payment_method"]) == ("Fabio", "card")
     assert item["created_by_name"] == "Fabio"
 

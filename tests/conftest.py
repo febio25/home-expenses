@@ -61,11 +61,19 @@ def categories(client):
     return {c["name"]: c["id"] for c in client.get("/api/v1/categories").json()}
 
 
+def strip_merchant_pairs(conn):
+    """Undo migration 008 on a copy of a backup, to simulate one made
+    before 0.11.0."""
+    conn.execute("DROP TABLE merchant_distinct_pairs")
+
+
 def strip_vinted_schema(conn):
     """Undo migration 005 on a copy of a backup, to simulate one made before
     0.8.0. The "Vinted" category row stays: the migration adopts it again by
     name, as it does with a category created by hand. Also drops what came
-    after 0.8.0 on top of it (0.10.0: the price history of the listings)."""
+    after 0.8.0 on top of it (0.10.0: the price history of the listings;
+    0.11.0: the merchants marked as not duplicates)."""
+    strip_merchant_pairs(conn)
     conn.execute("DROP TABLE vinted_price_changes")
     conn.execute("DROP TABLE vinted_photos")
     conn.execute("DROP TABLE vinted_items")

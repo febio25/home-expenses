@@ -1,4 +1,5 @@
-"""Merchants: autocomplete source, rename and merge."""
+"""Merchants: autocomplete source, rename and merge; from 0.11.0 also the
+possible duplicates and the pairs marked as different."""
 
 from __future__ import annotations
 
@@ -7,7 +8,14 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..db import get_db, utc_now
-from ..schemas import MerchantMerge, MerchantOut, MerchantUpdate
+from ..merchant_duplicates import distinct_pairs, find_pairs
+from ..schemas import (
+    MerchantDistinctIn,
+    MerchantDuplicateOut,
+    MerchantMerge,
+    MerchantOut,
+    MerchantUpdate,
+)
 from ..security import current_user
 
 router = APIRouter(prefix="/merchants", tags=["merchants"], dependencies=[Depends(current_user)])
@@ -96,6 +104,52 @@ def list_merchants(db: sqlite3.Connection = Depends(get_db)):
     return [dict(row) for row in rows]
 
 
+@router.get("/duplicates", response_model=list[MerchantDuplicateOut])
+def list_duplicates(db: sqlite3.Connection = Depends(get_db)):
+    """Pairs of merchants whose names look alike (app/merchant_duplicates.py),
+    except those marked as different: same name written differently first,
+    then one name inside the other, then one letter apart."""
+    merchants = [dict(row) for row in db.execute(_SELECT).fetchall()]
+    return find_pairs(merchants, distinct_pairs(db))
+
+
+def _pair(merchant_id: int, other_id: int) -> tuple[int, int]:
+    if merchant_id == other_id:
+        raise HTTPException(status_code=422, detail="Scegli un esercente diverso.")
+    return (merchant_id, other_id) if merchant_id < other_id else (other_id, merchant_id)
+
+
+@router.post("/{merchant_id}/distinct", status_code=204)
+def mark_distinct(
+    merchant_id: int,
+    body: MerchantDistinctIn,
+    user: sqlite3.Row = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """«Non sono doppioni»: the pair is no longer offered, to either user.
+    Marking it twice changes nothing."""
+    first, second = _pair(merchant_id, body.other_id)
+    _fetch(db, first)
+    _fetch(db, second)
+    db.execute(
+        "INSERT OR IGNORE INTO merchant_distinct_pairs"
+        " (merchant_a_id, merchant_b_id, created_by_user_id, created_at) VALUES (?, ?, ?, ?)",
+        (first, second, user["id"], utc_now()),
+    )
+    db.commit()
+
+
+@router.delete("/{merchant_id}/distinct/{other_id}", status_code=204)
+def unmark_distinct(merchant_id: int, other_id: int, db: sqlite3.Connection = Depends(get_db)):
+    """Undo «Non sono doppioni»: the pair can be offered again."""
+    first, second = _pair(merchant_id, other_id)
+    db.execute(
+        "DELETE FROM merchant_distinct_pairs WHERE merchant_a_id = ? AND merchant_b_id = ?",
+        (first, second),
+    )
+    db.commit()
+
+
 @router.patch("/{merchant_id}", response_model=MerchantOut)
 def rename_merchant(
     merchant_id: int, body: MerchantUpdate, db: sqlite3.Connection = Depends(get_db)
@@ -126,7 +180,8 @@ def rename_merchant(
 def merge_merchant(
     merchant_id: int, body: MerchantMerge, db: sqlite3.Connection = Depends(get_db)
 ):
-    """Move every expense of this merchant to ``into_id`` and delete this one."""
+    """Move every expense of this merchant to ``into_id`` and delete this one
+    (with the pairs it was marked as different from)."""
     if body.into_id == merchant_id:
         raise HTTPException(status_code=422, detail="Scegli un esercente diverso.")
     source = _fetch(db, merchant_id)

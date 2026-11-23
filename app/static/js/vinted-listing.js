@@ -1,14 +1,20 @@
 // Vinted listings written with Claude (0.10.0), by hand: the app prepares
-// the request (GET /vinted/items/{id}/listing-request), the user shares it
-// with the Claude app (Android's share sheet, text and photo together) or
-// copies it, then pastes Claude's answer back (POST /vinted/listing/parse).
-// The app never talks to Claude itself.
+// the request (GET /vinted/items/{id}/listing-request), the user gives it
+// to the Claude app, then pastes Claude's answer back (POST
+// /vinted/listing/parse). The app never talks to Claude itself.
+//
+// 0.11.0: the Claude app for Android, given text and a photo together,
+// keeps only the photo. So "Condividi con Claude" copies the request to the
+// clipboard and shares the photo alone (in Claude: hold in the chat,
+// «Incolla»); an item without a photo shares the text. Request and photo
+// are fetched when the item's screen opens: a share needs the user's tap,
+// and Chrome allows it only for a few seconds after it.
 //
 // Clipboard and sharing need HTTPS: they work from the Tailscale address.
 // From plain HTTP (umbrel.local) the text is shown to copy by hand.
 
 import { api } from './api.js';
-import { h, toast, openDialog, centsToInput } from './ui.js';
+import { h, toast, openDialog, centsToInput, todayIso } from './ui.js';
 
 let optionsCache = null;
 
@@ -105,35 +111,95 @@ export function detailsSummary(details) {
   return parts.filter(Boolean).join(' · ');
 }
 
+// --- details: what step 1 of the ad asks for --------------------------------------
+
+// Complete when the kind, the condition and the brand are there (the author
+// for a book; for "Altro" the condition is enough).
+const REQUIRED = {
+  clothing: ['brand', 'condition'], bag: ['brand', 'condition'], book: ['book_author', 'condition'], other: ['condition'],
+};
+const MISSING_NAMES = { brand: 'marca', book_author: 'autore', condition: 'stato' };
+
+// { state: 'empty' | 'partial' | 'complete', missing: ['tipo', 'stato', …] }
+export function detailsProgress(details) {
+  const missing = [];
+  if (!details.kind) missing.push('tipo');
+  const required = details.kind ? REQUIRED[details.kind] || [] : ['condition'];
+  for (const field of required) if (!details[field]) missing.push(MISSING_NAMES[field]);
+  const any = Boolean(details.kind || details.similar_prices) || DETAIL_FIELDS.some((field) => details[field]);
+  return { state: missing.length === 0 ? 'complete' : any ? 'partial' : 'empty', missing };
+}
+
+// The details in evidence once they are complete: kind, brand or author,
+// size, condition, colour and material.
+export function detailChips(details) {
+  return [
+    details.kind_name, details.brand, details.book_author,
+    details.size ? `Taglia ${details.size}` : null, details.condition_name, details.color_material,
+  ].filter(Boolean);
+}
+
+// "Con misure e difetti · prezzi simili: 20, 25, 18": the rest, in one line.
+export function detailsExtra(details) {
+  const noted = [
+    ['measurements', 'misure'], ['defects', 'difetti'], ['book_publisher_year', 'editore e anno'],
+  ].filter(([field]) => details[field]).map(([, name]) => name);
+  const parts = [];
+  if (noted.length) {
+    parts.push(`Con ${noted.length > 1 ? `${noted.slice(0, -1).join(', ')} e ${noted[noted.length - 1]}` : noted[0]}`);
+  }
+  if (details.similar_prices) parts.push(`prezzi simili: ${details.similar_prices}`);
+  return parts.join(' · ');
+}
+
 // --- copy, share, paste ------------------------------------------------------------
 
 // The text in a box to copy by hand: when the clipboard is not available
-// (plain HTTP) or refuses.
-function manualCopyDialog(title, text) {
+// (plain HTTP) or refuses. With `file`, a button shares the photo after
+// (a new tap: the first one went to the clipboard that failed).
+function manualCopyDialog(title, text, file = null) {
   return openDialog((finish) => {
     const area = h('textarea', { class: 'input textarea', readOnly: true, rows: 8 }, text);
     setTimeout(() => { area.focus(); area.select(); }, 50);
     return h('div', { class: 'dialog-body' },
       h('h2', { class: 'dialog-title' }, title),
-      h('p', { class: 'dialog-text' }, 'Tieni premuto sul testo, «Seleziona tutto», poi «Copia».'),
+      h('p', { class: 'dialog-text' }, file
+        ? 'Tieni premuto sul testo, «Seleziona tutto», poi «Copia». Poi condividi la foto e in Claude incolla il testo.'
+        : 'Tieni premuto sul testo, «Seleziona tutto», poi «Copia».'),
       area,
       h('div', { class: 'dialog-actions' },
-        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => finish(null) }, 'Fatto')));
+        file ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => finish(null) }, 'Chiudi') : null,
+        file
+          ? h('button', { class: 'btn btn-primary', type: 'button', onclick: () => { finish(null); sharePhoto(file); } },
+            'Condividi la foto')
+          : h('button', { class: 'btn btn-primary', type: 'button', onclick: () => finish(null) }, 'Fatto')));
   });
+}
+
+// One more tap, when the first one is no longer valid for a share: Chrome
+// allows a share only a few seconds after the tap (slow connection), and
+// sharing it consumes the tap.
+function shareAgainDialog({ title, text, label, run }) {
+  return openDialog((finish) => h('div', { class: 'dialog-body' },
+    h('h2', { class: 'dialog-title' }, title),
+    h('p', { class: 'dialog-text' }, text),
+    h('div', { class: 'dialog-actions' },
+      h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => finish(null) }, 'Chiudi'),
+      h('button', { class: 'btn btn-primary', type: 'button', onclick: () => { finish(null); run(); } }, label))));
+}
+
+async function writeClipboard(text) {
+  if (!navigator.clipboard || !window.isSecureContext) throw new Error('no clipboard');
+  await navigator.clipboard.writeText(text);
 }
 
 export async function copyText(text, done = 'Copiato.') {
   try {
-    if (!navigator.clipboard || !window.isSecureContext) throw new Error('no clipboard');
-    await navigator.clipboard.writeText(text);
+    await writeClipboard(text);
     toast(done, { kind: 'success' });
   } catch (error) {
     await manualCopyDialog('Copia il testo', text);
   }
-}
-
-async function requestOf(item) {
-  return api.get(`/vinted/items/${item.id}/listing-request`);
 }
 
 function report(error, prefix) {
@@ -142,58 +208,120 @@ function report(error, prefix) {
 }
 
 function fileName(item) {
-  const base = item.title.normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  const base = item.title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 40);
   return `${base || 'articolo'}.jpg`;
 }
 
-// Android's share sheet with the request and the photo: the user picks the
-// Claude app. Without file sharing, the text alone; without sharing at all,
-// the text to copy.
-export async function shareWithClaude(item) {
-  let request;
+// The request and the photo of an item, fetched once: the item's screen
+// calls this when it opens and after every change, the buttons wait for it.
+let prepared = null; // { key, promise }
+
+function requestKey(item) {
+  return [item.id, item.updated_at, item.photo || '', todayIso()].join('|');
+}
+
+export function prepareRequest(item) {
+  const key = requestKey(item);
+  if (prepared && prepared.key === key) return prepared.promise;
+  const promise = (async () => {
+    const request = await api.get(`/vinted/items/${item.id}/listing-request`);
+    let file = null;
+    if (item.photo) {
+      try {
+        const blob = await api.blob(`/vinted/items/${item.id}/photo?v=${encodeURIComponent(item.photo)}`);
+        file = new File([blob], fileName(item), { type: 'image/jpeg' });
+      } catch (error) { file = null; } // the text alone, then
+    }
+    return { text: request.text, file };
+  })();
+  prepared = { key, promise };
+  promise.catch(() => { if (prepared && prepared.key === key) prepared = null; });
+  return promise;
+}
+
+// Forget what was prepared: the purchase may have changed on another screen.
+export function forgetRequest() { prepared = null; }
+
+function canShareFile(file) {
   try {
-    request = await requestOf(item);
-  } catch (error) { report(error, 'Richiesta non pronta'); return; }
-  const data = { text: request.text };
-  if (item.photo && navigator.canShare) {
-    try {
-      const blob = await api.blob(`/vinted/items/${item.id}/photo?v=${encodeURIComponent(item.photo)}`);
-      const file = new File([blob], fileName(item), { type: 'image/jpeg' });
-      if (navigator.canShare({ files: [file] })) data.files = [file];
-    } catch (error) { /* share the text alone */ }
-  }
-  if (!navigator.share) {
-    await manualCopyDialog('Richiesta per Claude', request.text);
-    return;
-  }
+    return Boolean(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+  } catch (error) { return false; }
+}
+
+async function sharePhoto(file) {
   try {
-    await navigator.share(data);
+    await navigator.share({ files: [file] });
   } catch (error) {
     if (error.name === 'AbortError') return; // share sheet closed
-    await manualCopyDialog('Richiesta per Claude', request.text);
+    await shareAgainDialog({
+      title: 'Condividi la foto',
+      text: 'La richiesta è negli appunti. Tocca qui sotto per condividere la foto con Claude.',
+      label: 'Condividi la foto',
+      run: () => sharePhoto(file),
+    });
   }
 }
 
-export async function copyRequest(item) {
-  let request;
+async function shareText(text) {
+  if (!navigator.share) {
+    await manualCopyDialog('Richiesta per Claude', text);
+    return;
+  }
   try {
-    request = await requestOf(item);
+    await navigator.share({ text });
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    await shareAgainDialog({
+      title: 'Richiesta pronta',
+      text: 'Tocca qui sotto per condividerla con Claude.',
+      label: 'Condividi',
+      run: () => shareText(text),
+    });
+  }
+}
+
+// "Condividi con Claude": with a photo, the request goes to the clipboard
+// and the photo to the share sheet; without one, the request is shared.
+export async function shareWithClaude(item) {
+  let ready;
+  try {
+    ready = await prepareRequest(item);
   } catch (error) { report(error, 'Richiesta non pronta'); return; }
-  await copyText(request.text, item.photo
+  if (!ready.file) {
+    await shareText(ready.text);
+    return;
+  }
+  let copied = true;
+  try { await writeClipboard(ready.text); } catch (error) { copied = false; }
+  if (!canShareFile(ready.file)) {
+    // A browser that cannot share photos (a computer): the photo is
+    // attached in Claude by hand.
+    if (copied) toast('Richiesta copiata: incollala in Claude e allega la foto.', { kind: 'success', duration: 7000 });
+    else await manualCopyDialog('Richiesta per Claude', ready.text);
+    return;
+  }
+  if (!copied) {
+    await manualCopyDialog('Richiesta per Claude', ready.text, ready.file);
+    return;
+  }
+  toast('Richiesta copiata: in Claude tieni premuto nella chat e scegli «Incolla».', { kind: 'success', duration: 7000 });
+  await sharePhoto(ready.file);
+}
+
+export async function copyRequest(item) {
+  let ready;
+  try {
+    ready = await prepareRequest(item);
+  } catch (error) { report(error, 'Richiesta non pronta'); return; }
+  await copyText(ready.text, item.photo
     ? 'Richiesta copiata: incollala in Claude e allega la foto.'
     : 'Richiesta copiata: incollala in Claude.');
 }
 
-export async function savePhoto(item) {
-  try {
-    await api.download(`/vinted/items/${item.id}/photo?v=${encodeURIComponent(item.photo)}`, fileName(item));
-  } catch (error) { report(error, 'Foto non salvata'); }
-}
-
 // Claude's answer: from the clipboard when the phone allows it, otherwise
 // pasted in a box. Resolves to the text, or null.
-function pasteDialog() {
+function pasteDialog(note = null) {
   return openDialog((finish) => {
     const area = h('textarea', {
       class: 'input textarea', rows: 8, placeholder: 'Tieni premuto qui e scegli «Incolla».',
@@ -204,6 +332,7 @@ function pasteDialog() {
       onsubmit: (event) => { event.preventDefault(); if (area.value.trim()) finish(area.value); },
     },
       h('h2', { class: 'dialog-title' }, 'Incolla la risposta di Claude'),
+      note ? h('p', { class: 'dialog-text' }, note) : null,
       area,
       h('div', { class: 'dialog-actions' },
         h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => finish(null) }, 'Annulla'),
@@ -218,8 +347,13 @@ export async function readAnswer() {
       text = await navigator.clipboard.readText();
     }
   } catch (error) { text = ''; }
-  // Only an answer that looks like Claude's: otherwise ask to paste it.
-  if (!/TITOLO|DESCRIZIONE/i.test(text)) text = await pasteDialog();
+  // Still the request (copied by «Condividi con Claude»), not the answer.
+  if (isRequest(text)) {
+    text = await pasteDialog('Negli appunti c’è ancora la richiesta. In Claude copia la risposta (il pulsante copia sotto il messaggio) e incollala qui.');
+  } else if (!/TITOLO|DESCRIZIONE/i.test(text)) {
+    // Only an answer that looks like Claude's: otherwise ask to paste it.
+    text = await pasteDialog();
+  }
   if (!text) return null;
   try {
     return await api.post('/vinted/listing/parse', { text });
@@ -227,6 +361,11 @@ export async function readAnswer() {
     report(error, 'Risposta non letta');
     return null;
   }
+}
+
+// The request itself, as the server builds it (0.10.0 or 0.11.0).
+function isRequest(text) {
+  return /Rispondi solo in questo formato/.test(text) && /annuncio Vinted \(Italia\)/.test(text);
 }
 
 // The answer read last, for the listing screen opened right after.

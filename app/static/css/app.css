@@ -732,3 +732,56 @@ dialog.viewer::backdrop { background: rgb(20 37 31 / 0.6); }
 .banner-check p + p { margin-top: 6px; }
 .form-hint-top { margin: 4px 4px 0; font-weight: 650; color: var(--ink); }
 .details-toggle { margin-top: 14px; }
+
+/* 0.11.0: the "Annuncio" card in steps, the ad to copy, merchants */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.listing-card .info { align-items: flex-start; }
+.step { gap: 10px; }
+.step-num {
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-top: 1px;
+  border-radius: 50%; background: var(--primary-soft); color: var(--primary-press);
+  font-size: 0.8125rem; font-weight: 700;
+}
+.step-num.is-done { background: var(--primary); color: #fff; }
+.step-num .icon svg { width: 16px; height: 16px; }
+.step-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -10px 0 -10px; }
+.step-head .btn-text { padding-right: 0; }
+.step-title { font-weight: 650; }
+.step-text { color: var(--muted); font-size: 0.8125rem; line-height: 1.4; margin-top: 2px; }
+.step-missing { color: #5C4700; font-weight: 600; }
+.step-alt { display: flex; flex-wrap: wrap; align-items: center; margin-top: 2px; }
+.step-alt .btn-text, .info-center .step-text .btn-text { padding: 10px 4px; font-size: 0.875rem; }
+.step-btn { gap: 8px; min-height: 48px; margin-top: 8px; }
+.step-btn .icon svg { width: 20px; height: 20px; }
+.detail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.detail-chip {
+  max-width: 100%; padding: 3px 10px; border-radius: 999px; background: var(--primary-soft);
+  color: var(--primary-press); font-size: 0.8125rem; font-weight: 600; overflow-wrap: anywhere;
+}
+.info-center { justify-content: center; text-align: center; padding-top: 2px; padding-bottom: 2px; }
+.listing-card .info-center { align-items: center; }
+.info-label { color: var(--muted); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+.listing-value { font-weight: 650; overflow-wrap: anywhere; }
+.listing-desc.is-clamped { -webkit-line-clamp: 3; }
+.listing-desc:not(.is-clamped) { display: block; }
+.listing-card .info > .btn-text { margin: -8px -8px 0 0; }
+.listing-reminder {
+  margin: 0; padding: 10px 12px; border-radius: 10px; width: 100%;
+  background: #FFF3BF; color: #5C4700; border: 1.5px solid #F2D675; font-size: 0.875rem;
+}
+.merchant-search { margin-bottom: 8px; }
+.dup-title { font-weight: 700; margin: 10px 0 2px; }
+.dup-hint { color: var(--muted); font-size: 0.8125rem; margin: 0 0 8px; }
+.dup-item { border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px 4px; margin-bottom: 8px; }
+.dup-names { display: flex; flex-direction: column; gap: 2px; }
+.dup-name { font-weight: 650; overflow-wrap: anywhere; }
+.dup-name .manage-count { margin-left: 6px; }
+.dup-reason { color: var(--muted); font-size: 0.8125rem; margin-top: 2px; }
+.dup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; margin-right: -8px; }
+.all-title { font-weight: 700; margin: 14px 0 0; }
+.listing-card a.btn-text { text-decoration: none; }
+.listing-card .btn-text-start { align-self: flex-start; text-align: left; padding-top: 4px; padding-bottom: 4px; min-height: 36px; }

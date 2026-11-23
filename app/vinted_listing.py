@@ -1,11 +1,14 @@
 """Vinted listings written with Claude (0.10.0), by hand: the app builds the
 request (the item's data, the rules and a fixed answer format), the user
-shares it with the Claude app, then pastes the answer back. Nothing here
+gives it to the Claude app, then pastes the answer back. Nothing here
 calls anything outside the app.
 
-The answer format must stay the same as in the instructions of the claude.ai
-Project "Annunci Vinted" (claude/annunci-vinted.md, section 5): if one
-changes, change the other, or the answer is no longer recognised.
+0.11.0: the rules follow the style of Nastia's own ads (a natural title,
+a few sentences of prose, an example of hers) and include the price rules,
+so the request is enough on its own. The same rules, in more detail, are in
+the skill «annunci-vinted» that the README asks to add to the Claude
+account. The answer format must stay the same in both: if one changes,
+change the other, or the answer is no longer recognised.
 """
 
 from __future__ import annotations
@@ -30,11 +33,20 @@ MONTHS = [
 # Labels of the request: "Colore/materiale" as in the Project's instructions.
 REQUEST_LABELS = {**VINTED_DETAIL_LABELS, "color_material": "Colore/materiale"}
 
-RULES = (
-    "Regole: scrivi in italiano, tono semplice e onesto. Non inventare dettagli che non sono"
-    " nei dati o nella foto: se qualcosa va controllato, scrivilo in VERIFICA. Proponi un prezzo"
-    " realistico per Vinted, tenendo conto dei prezzi simili se ci sono."
-)
+INTRO = "Scrivi titolo e descrizione per un annuncio Vinted (Italia) di questo articolo e proponi il prezzo."
+STYLE = """Come scrivere
+- Titolo: una frase breve e naturale, come la scriverebbe una persona: cos'è, marca, il dettaglio più utile, colore e taglia. Per i libri «Titolo - Autore». Niente hashtag, elenchi di parole chiave, emoji o simboli.
+- Descrizione: in prosa, da 1 a 4 frasi, tono cordiale e sincero. Prima cos'è e com'è fatto (materiale, colore, dettagli, misure dentro la frase), poi le condizioni, con i difetti detti chiaramente e il rimando alle foto. Niente elenchi puntati, hashtag, emoji, parole tutte in maiuscolo o frasi pubblicitarie («affare», «spedizione veloce»).
+- Non inventare dettagli che non sono nei dati o nella foto (marca, materiale, misure, difetti, autenticità): se manca qualcosa d'importante, scrivilo in VERIFICA.
+- Prezzo: realistico per Vinted, tenendo conto di stato, marca e prezzi simili se ci sono; in euro interi, un po' sopra il prezzo a cui mi aspetto di vendere, per lasciare spazio alle offerte. Senza prezzi simili, una stima prudente, e in VERIFICA il consiglio di confrontarla con annunci simili.
+- Minimo: il prezzo sotto cui non conviene scendere; di norma non sotto quanto l'ho pagato."""
+ON_SALE = "L'articolo è già in vendita: proponi un PREZZO aggiornato e spiega in VERIFICA perché."
+# One of Nastia's own ads on Vinted, barely shortened: Claude copies the tone.
+EXAMPLE = """Esempio dello stile (solo per il tono, non per i contenuti):
+TITOLO: Giubbotto piumino Benetton taglia 44 (M) trapuntato collo alto
+DESCRIZIONE:
+Giubbotto piumino da donna di Benetton usato ma in ottime condizioni, con piccolissimi difetti che faccio vedere nelle ultime due foto.
+È davvero caldo e comodo, in piuma d'oca, con collo alto, zip asimmetrica laterale e fiocco decorativo in vita."""
 ANSWER_FORMAT = """Rispondi solo in questo formato:
 TITOLO: …
 DESCRIZIONE:
@@ -66,8 +78,7 @@ def build_request(item: dict, today: date) -> str:
     details = item["details"]
     has_photo = item["photo"] is not None
     lines = [
-        "Aiutami a preparare un annuncio Vinted (Italia) per questo articolo."
-        + (" La foto è allegata." if has_photo else " Non ho una foto: basati solo sui dati."),
+        INTRO + (" La foto è allegata." if has_photo else " Non ho una foto: basati solo sui dati."),
         "",
     ]
 
@@ -95,14 +106,22 @@ def build_request(item: dict, today: date) -> str:
         since = "da oggi" if days == 0 else "da 1 giorno" if days == 1 else f"da {days} giorni"
         price = f" a {euro(listing['price_cents'])}" if listing["price_cents"] else ""
         add("In vendita", f"{since}{price}, non ancora venduto")
-        add("Titolo attuale", listing["title"])
-    lines += ["", RULES]
+        # The title on Vinted: the ad's own, or the item's name when the ad
+        # has a text but no title of its own (0.11.0).
+        add("Titolo attuale", listing["title"] or (item["title"] if listing["description"] else None))
+    lines += ["", STYLE]
     if on_sale:
-        lines.append(
-            "L'articolo è già in vendita: proponi un PREZZO aggiornato e spiega in VERIFICA perché."
-        )
-    lines += ["", ANSWER_FORMAT]
+        lines.append(ON_SALE)
+    lines += ["", EXAMPLE, "", ANSWER_FORMAT]
     return "\n".join(lines)
+
+
+def is_request(text: str) -> bool:
+    """True for the request itself (of this version or of 0.10.0), pasted
+    where Claude's answer was expected."""
+    return "Rispondi solo in questo formato" in text and (
+        INTRO in text or "Aiutami a preparare un annuncio Vinted" in text
+    )
 
 
 # --- reading the answer -----------------------------------------------------------
@@ -194,4 +213,4 @@ def options() -> dict:
     }
 
 
-__all__ = ["build_request", "parse_answer", "options", "detail_fields", "italian_date", "euro"]
+__all__ = ["build_request", "parse_answer", "is_request", "options", "detail_fields", "italian_date", "euro"]

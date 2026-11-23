@@ -63,14 +63,21 @@ esposta su internet.
   giorno. In cima alla lista quattro filtri a icona con il numero: da
   pubblicare (nuvola), in vendita (negozio), venduti (moneta), tutti (pila,
   ritirati compresi). La ricerca guarda tutti gli articoli.
-- *Annunci con Claude* (0.10.0): l'app prepara la richiesta con i dati
-  dell'articolo e la condivide con l'app Claude insieme alla foto; la
-  risposta incollata riempie titolo, descrizione, prezzo e minimo. L'app
-  non chiama Claude né altri servizi: vedi [Annunci Vinted con
+- *Annunci con Claude* (0.10.0, rivisti nella 0.11.0): nella scheda
+  dell'articolo tre passi (dettagli, «Condividi con Claude», «Incolla
+  risposta»); la risposta incollata riempie titolo, descrizione, prezzo e
+  minimo, poi l'annuncio pronto si copia su Vinted. L'app non chiama Claude
+  né altri servizi: vedi [Annunci Vinted con
   Claude](#annunci-vinted-con-claude).
 - *Impostazioni* si apre dall'icona a ingranaggio in alto a destra, accanto
   al nome, nelle schermate Nuova spesa, Movimenti, Riepilogo e Vinted.
 - Gestione di categorie ed esercenti (rinomina, disattiva, unisci i doppioni).
+  Dalla 0.11.0 *Impostazioni → Esercenti* ha la ricerca (senza maiuscole e
+  accenti) e i **possibili doppioni**: nomi uguali a meno di maiuscole,
+  accenti, punteggiatura e sigle (srl, spa…), un nome dentro l'altro («Lidl»
+  e «Lidl via Roma») o una lettera di differenza («Esselunga» ed
+  «Eselunga»). Per ogni coppia «Unisci» (scegli il nome da tenere) oppure
+  «Non sono doppioni», che vale per entrambi e non la ripropone più.
   La categoria *Vinted* serve alla sezione: si può rinominare ma non
   disattivare né eliminare.
 - Export CSV per mese o intervallo, in due formati: un file per le spese e
@@ -401,6 +408,12 @@ era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
 
+Dalla 0.10.0 alla 0.11.0, al primo avvio il database aggiunge solo la
+tabella delle coppie di esercenti segnate come «Non sono doppioni» (vuota):
+articoli, annunci ed esercenti non cambiano. Dopo l'aggiornamento conviene
+aggiungere la skill «annunci-vinted» al proprio account Claude (vedi
+[Annunci Vinted con Claude](#annunci-vinted-con-claude)).
+
 Consiglio: scarica un backup dall'app prima di aggiornare.
 
 ### In locale
@@ -422,7 +435,8 @@ docker compose up -d --build
   o creata come all'aggiornamento. Un backup fatto con la 0.8.0 non si
   ripristina sulle versioni precedenti: l'app lo rifiuta con «Il backup viene
   da una versione più recente dell'app». Lo stesso vale per un backup della
-  0.10.0 (annunci e storico dei prezzi) sulle versioni precedenti.
+  0.10.0 (annunci e storico dei prezzi) e della 0.11.0 (esercenti segnati
+  come «Non sono doppioni») sulle versioni precedenti.
 - **Dimensioni:** le foto sono salvate nel database, ridotte dal telefono a
   1200 pixel sul lato lungo (JPEG, al massimo 3 MB l'una) più una miniatura:
   il backup cresce con il numero di foto. Il ripristino accetta file fino a
@@ -582,29 +596,47 @@ Dalla 0.10.0 l'app aiuta a scrivere l'annuncio di un articolo con Claude,
 né altri servizi (nessuna chiave, nessuna chiamata esterna). La
 pubblicazione su Vinted resta sempre manuale.
 
-1. **Dettagli** (facoltativi): in *Nuovo articolo* → «Aggiungi dettagli per
-   l'annuncio», oppure dalla scheda → *Annuncio* → «Modifica». Il tipo
-   (Abbigliamento, Borsa, Libro, Altro) decide i campi: marca, taglia,
-   stato, colore e materiale, misure, difetti; per i libri autore, editore e
-   anno. «Prezzi simili visti su Vinted» (es. «20, 25, 18») dà a Claude un
-   riferimento vero per il prezzo.
-2. **Scheda dell'articolo → Annuncio → «Condividi con Claude»:** si apre il
-   menu Condividi di Android con la richiesta e la foto; scegli l'app
-   Claude. In alternativa «Copia richiesta» e «Salva foto», per incollare la
-   richiesta in una chat del Progetto (sotto) e allegare la foto a mano.
+Nella scheda dell'articolo il riquadro *Annuncio* segue la vita
+dell'articolo (0.11.0):
+
+1. **Compila i dettagli** (passo 1): «Aggiungi dettagli» apre la schermata
+   *Dettagli*. Il tipo (Abbigliamento, Borsa, Libro, Altro) decide i campi:
+   marca, taglia, stato, colore e materiale, misure, difetti; per i libri
+   autore, editore e anno. «Prezzi simili visti su Vinted» (es. «20, 25,
+   18») dà a Claude un riferimento vero per il prezzo. Il passo è compiuto
+   con tipo, stato e marca (autore per i libri; solo lo stato per «Altro»);
+   gli altri passi funzionano anche senza. Si possono compilare anche in
+   *Nuovo articolo* → «Aggiungi dettagli per l'annuncio».
+2. **Chiedi a Claude** (passo 2), «Condividi con Claude»:
+   - **con la foto:** l'app copia la richiesta negli appunti e apre il menu
+     Condividi con la sola foto (l'app Claude per Android, ricevendo testo
+     e foto insieme, tiene solo la foto). Scegli Claude; nella chat tieni
+     premuto nel campo del messaggio, scegli **Incolla** e invia;
+   - **senza foto:** il menu Condividi riceve direttamente la richiesta.
+
+   «Copia solo la richiesta» copia il testo senza condividere nulla.
 3. Claude risponde nel formato fisso (TITOLO, DESCRIZIONE, PREZZO, MINIMO,
-   VERIFICA): copia la risposta.
-4. **«Incolla risposta»:** si apre la schermata *Annuncio* con titolo,
-   descrizione, prezzo e minimo già compilati, più un avviso giallo con le
-   cose da controllare (non viene salvato). Correggi e **Salva annuncio**.
-   Se la risposta non è nel formato, tutto il testo finisce nella
-   descrizione e i prezzi restano vuoti.
-5. **Su Vinted** pubblichi a mano, con «Copia titolo» e «Copia descrizione».
-   Poi **Segna come pubblicato**: il prezzo di quel giorno diventa il prezzo
-   di partenza. Se lo abbassi, «Cambia prezzo» nella scheda: lo storico dei
-   prezzi finisce nel CSV (`prezzo_partenza`, `cambi_prezzo`). Per un
-   articolo già in vendita, la richiesta a Claude dice da quanti giorni e a
-   che prezzo, e chiede un prezzo aggiornato.
+   VERIFICA): copia la risposta con il pulsante copia sotto il messaggio.
+4. **Incolla la risposta** (passo 3): si apre la schermata *Annuncio* con
+   titolo, descrizione, prezzo e minimo già compilati, più un avviso giallo
+   con le cose da controllare (non viene salvato). Correggi e **Salva
+   annuncio**. Se la risposta non è nel formato, tutto il testo finisce nella
+   descrizione e i prezzi restano vuoti. Se negli appunti c'è ancora la
+   richiesta, l'app lo dice e apre la casella in cui incollare. «Oppure
+   scrivi l'annuncio tu» apre la stessa schermata vuota.
+5. **Annuncio pronto:** il riquadro mostra titolo, descrizione e prezzo, ognuno
+   con «Copia», e il promemoria per Vinted. Pubblichi a mano su Vinted, poi
+   **Segna come pubblicato**: il prezzo di quel giorno diventa il prezzo di
+   partenza. «Chiedi di nuovo» ripropone i passi.
+6. **In vendita:** in cima il prezzo su Vinted con «Cambia» (lo storico dei
+   prezzi finisce nel CSV: `prezzo_partenza`, `cambi_prezzo`), poi titolo e
+   descrizione con «Copia» e «Non si vende? Chiedi a Claude un prezzo
+   nuovo»: la richiesta dice da quanti giorni e a che prezzo è in vendita.
+   Venduto o ritirato: resta solo il testo, se c'è.
+
+Il **titolo dell'annuncio** parte dal nome dell'articolo: finché non salvi un
+titolo diverso (di solito quello di Claude), «Copia» copia il nome, e se
+rinomini l'articolo cambia anche lui.
 
 Appunti, condivisione e lettura degli appunti funzionano solo in HTTPS,
 cioè dall'indirizzo Tailscale. Da `http://umbrel.local:8395` l'app mostra il
@@ -612,44 +644,32 @@ testo da copiare a mano e una casella in cui incollare la risposta. La prima
 volta che tocchi «Incolla risposta» Chrome può chiedere il permesso di
 leggere gli appunti; se lo neghi, l'app apre la casella in cui incollare.
 
-### Il Progetto claude.ai «Annunci Vinted»
+### Le regole per Claude: richiesta e skill «annunci-vinted»
 
-Le regole di stile e di prezzo stanno meglio in un Progetto di claude.ai,
-così si cambiano senza una nuova versione dell'app: *Progetti → Nuovo
-progetto → «Annunci Vinted» → Istruzioni*, e incolla il testo qui sotto. Il
-formato della risposta deve restare **identico** a quello della richiesta
-dell'app (`app/vinted_listing.py`), altrimenti «Incolla risposta» non
-riconosce le parti.
+Dalla 0.11.0 la richiesta dell'app basta da sola: contiene i dati, le regole
+di stile (titolo come frase naturale, descrizione in prosa da 1 a 4 frasi,
+niente hashtag, elenchi o emoji, un esempio da un annuncio di Nastia), le
+regole del prezzo e il formato della risposta (`app/vinted_listing.py`).
 
-```text
-Mi aiuti a scrivere annunci per Vinted Italia. Vendo soprattutto abbigliamento e borse, a volte libri. Ti mando i dati dell'articolo e una foto.
+Le stesse regole, più dettagliate (titoli d'esempio, libri, richieste di
+modifica nella stessa chat), stanno nella skill
+[`skills/annunci-vinted/SKILL.md`](skills/annunci-vinted/SKILL.md). Claude la
+usa da solo in qualsiasi chat, anche in quella aperta con «Condividi», e la
+si può cambiare senza una nuova versione dell'app. Per aggiungerla:
 
-Stile
-- Italiano semplice, frasi brevi, tono onesto e cordiale. Niente superlativi vuoti né emoji in eccesso.
-- Titolo breve: tipo di articolo, marca, dettaglio principale, taglia se c'è (es. «Giacca jeans Levi's taglia M»).
-- Descrizione: 3-6 righe. Prima cosa è e com'è fatto, poi stato e difetti (sempre dichiarati), poi misure se ci sono. Per i libri: autore, titolo, editore e anno, condizioni di copertina e pagine (sottolineature, orecchie).
-- Non inventare marca, materiale, misure o difetti: usa solo i dati e ciò che si vede chiaramente nella foto. Se manca qualcosa di importante (misure, etichetta, materiale), dillo in VERIFICA.
-- Per le borse di marca non dichiarare l'autenticità se non è nei dati.
+1. Su claude.ai: *Impostazioni → Capacità*, attiva «Esecuzione del codice e
+   creazione di file» (serve alle skill).
+2. Comprimi la cartella `skills/annunci-vinted` in un file ZIP (o usa quello
+   consegnato con la versione) e caricalo da *Personalizza → Skill → + →
+   Carica una skill*.
+3. Ogni persona la aggiunge al **proprio** account Claude: se Nastia usa un
+   account suo, la carica anche lei. Senza skill la richiesta funziona
+   comunque.
 
-Prezzo
-- Se ci sono prezzi simili visti su Vinted, partire da lì, tenendo conto di stato e marca.
-- Se non ci sono, dare una stima prudente e scrivere in VERIFICA di confrontarla con annunci simili.
-- PREZZO in euro interi, leggermente sopra il prezzo a cui mi aspetto di vendere, per lasciare margine alle offerte.
-- MINIMO: prezzo sotto cui non conviene scendere; di norma non sotto quanto l'ho pagato, salvo articoli fermi da molto tempo.
-- Se l'articolo è già in vendita da tempo, proponi un PREZZO aggiornato e spiega in VERIFICA perché.
-
-Rispondi sempre e solo in questo formato:
-TITOLO: …
-DESCRIZIONE:
-…
-PREZZO: (solo il numero, in euro)
-MINIMO: (prezzo sotto cui non scendere)
-VERIFICA: (cose da controllare prima di pubblicare, oppure «niente»)
-```
-
-Non verificato: se l'app Claude per Android, ricevendo testo e foto dal menu
-Condividi, li mette entrambi nella chat, e se la chat condivisa può aprirsi
-dentro il Progetto. Se non succede, usa «Copia richiesta» e «Salva foto».
+Il formato della risposta deve restare **identico** nella richiesta e nella
+skill, altrimenti «Incolla risposta» non riconosce le parti. Il Progetto
+claude.ai «Annunci Vinted» suggerito dalla 0.10.0 non serve più: una chat
+aperta con «Condividi» non entra in un Progetto.
 
 ## API
 
@@ -735,6 +755,15 @@ CDN.
   (tipi con i loro campi, stati con le parole di Vinted), `GET
   /items/{id}/listing-request` (il testo da mandare a Claude) e `POST
   /listing/parse` (legge la risposta incollata, senza salvare nulla).
+- Dalla 0.11.0: `listing.effective_title` (il titolo da mettere su Vinted:
+  quello dell'annuncio o, se manca, il nome dell'articolo); `POST
+  /listing/parse` risponde 422 se riceve la richiesta stessa invece della
+  risposta; l'acquisto di un articolo non ha più «Vinted» come esercente
+  predefinito. Esercenti: `GET /api/v1/merchants/duplicates` (coppie di nomi
+  che si assomigliano: `reason` `same`, `contained` o `similar`, con
+  `reason_name` in italiano; prima l'esercente con più spese), `POST
+  /api/v1/merchants/{id}/distinct` con `{other_id}` («Non sono doppioni») e
+  `DELETE /api/v1/merchants/{id}/distinct/{other_id}` (annulla).
 
 ## Sviluppo
 
@@ -762,6 +791,7 @@ app/
   money.py         conversione degli importi in centesimi
   text.py          ricerca: testo senza maiuscole e accenti
   vinted_listing.py  annunci Vinted: richiesta per Claude e lettura della risposta
+  merchant_duplicates.py  possibili doppioni tra gli esercenti
   dates.py         intervalli di date
   schemas.py       modelli JSON dell'API
   migrations/      schema del database (file SQL numerati)
@@ -771,6 +801,7 @@ app/
                    vinted, export, backup
   static/          frontend (HTML, CSS, JavaScript, manifest, service worker)
 tests/             test automatici (pytest)
+skills/            skill «annunci-vinted» da caricare su claude.ai
 scripts/           generazione delle icone
 .github/workflows/ pubblicazione dell'immagine su GHCR (release.yml)
 Dockerfile

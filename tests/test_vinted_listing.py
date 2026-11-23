@@ -6,7 +6,7 @@ from __future__ import annotations
 import csv
 import io
 
-from app.vinted_listing import parse_answer
+from app.vinted_listing import EXAMPLE, STYLE, parse_answer
 from tests.conftest import PINNED_TODAY
 from tests.test_vinted import API, JPEG, THUMB, b64, bought, make_item, sell
 
@@ -62,8 +62,8 @@ def test_details_on_create_and_patch(client):
     assert (details["condition"], details["condition_name"]) == ("very_good", "Ottime condizioni")
     assert details["defects"] is None and details["similar_prices"] is None
     assert item["listing"] == {
-        "title": None, "description": None, "price_cents": None, "min_price_cents": None,
-        "start_price_cents": None, "price_changes": []}
+        "title": None, "effective_title": "Giacca in jeans", "description": None, "price_cents": None,
+        "min_price_cents": None, "start_price_cents": None, "price_changes": []}
 
     changed = patch(client, item["id"], defects="segno sul polsino", similar_prices="20, 25, 18", brand=None)
     assert changed["details"]["brand"] is None  # null clears
@@ -163,7 +163,7 @@ def test_request_for_clothing_with_everything(client):
     client.put(f"{API}/vinted/items/{item['id']}/photo", json={"image": b64(JPEG), "thumb": b64(THUMB)})
     answer = request_text(client, item["id"])
     assert answer["has_photo"] is True
-    assert answer["text"] == f"""Aiutami a preparare un annuncio Vinted (Italia) per questo articolo. La foto è allegata.
+    assert answer["text"] == f"""Scrivi titolo e descrizione per un annuncio Vinted (Italia) di questo articolo e proponi il prezzo. La foto è allegata.
 
 Tipo: Abbigliamento
 Articolo: Giacca in jeans
@@ -177,9 +177,15 @@ Comprato a: 12,00 € il 3 novembre 2026, da Mercatino Usato
 Prezzi simili visti su Vinted: 20, 25, 18, 30
 Note: indossata due volte
 
-Regole: scrivi in italiano, tono semplice e onesto. Non inventare dettagli che non sono nei dati o nella foto: se qualcosa va controllato, scrivilo in VERIFICA. Proponi un prezzo realistico per Vinted, tenendo conto dei prezzi simili se ci sono.
+{STYLE}
+
+{EXAMPLE}
 
 {ANSWER_FORMAT}"""
+    # 0.11.0: the rules follow Nastia's ads, with the price rules inside.
+    for rule in ("una frase breve e naturale", "Niente hashtag", "in prosa, da 1 a 4 frasi",
+                 "di norma non sotto quanto l'ho pagato", "in euro interi"):
+        assert rule in answer["text"], rule
 
 
 def test_request_for_a_book_and_for_an_item_without_details(client):
@@ -188,7 +194,7 @@ def test_request_for_a_book_and_for_an_item_without_details(client):
     text = request_text(client, book["id"])["text"]
     assert "Non ho una foto: basati solo sui dati." in text.splitlines()[0]
     assert "Tipo: Libro\nArticolo: Il nome della rosa\nAutore: Umberto Eco\nEditore e anno: Bompiani, 1980\n" \
-        "Stato: Buone condizioni\n\nRegole:" in text
+        "Stato: Buone condizioni\n\nCome scrivere\n" in text
     assert "Marca" not in text and "Comprato a" not in text
 
     bare = make_item(client, title="Lampada")
@@ -320,3 +326,47 @@ def test_deleting_the_item_deletes_its_price_history(client, app):
         assert conn.execute("SELECT COUNT(*) FROM vinted_price_changes").fetchone()[0] == 0
     finally:
         conn.close()
+
+
+# --- 0.11.0 ------------------------------------------------------------------------------
+
+
+def test_title_of_the_ad_defaults_to_the_item_name(client):
+    item = make_item(client, title="Giacca jeans")
+    assert (item["listing"]["title"], item["listing"]["effective_title"]) == (None, "Giacca jeans")
+    own = patch(client, item["id"], listing_title="Giacca jeans Levi's blu taglia M")
+    assert own["listing"]["effective_title"] == "Giacca jeans Levi's blu taglia M"
+    back = patch(client, item["id"], listing_title=None)
+    assert (back["listing"]["title"], back["listing"]["effective_title"]) == (None, "Giacca jeans")
+    # Renamed in the app: the ad without a title of its own follows.
+    assert patch(client, item["id"], title="Giacca")["listing"]["effective_title"] == "Giacca"
+
+
+def test_request_of_an_item_on_sale_names_the_title_in_use(client):
+    item = make_item(client, title="Borsa", listed_on="2027-06-18", price="25",
+                     listing_description="Borsa in pelle marrone.")
+    assert "Titolo attuale: Borsa\n" in request_text(client, item["id"])["text"]
+    bare = make_item(client, title="Felpa", listed_on="2027-06-18")
+    assert "Titolo attuale" not in request_text(client, bare["id"])["text"]  # no ad written yet
+
+
+def test_the_request_pasted_instead_of_the_answer_is_refused(client):
+    item = make_item(client, title="Giacca jeans", kind="clothing")
+    text = request_text(client, item["id"])["text"]
+    for pasted in (text, f"  {text}\n", text.replace(
+            "Scrivi titolo e descrizione per un annuncio Vinted (Italia) di questo articolo e proponi il prezzo.",
+            "Aiutami a preparare un annuncio Vinted (Italia) per questo articolo.")):
+        response = client.post(f"{API}/vinted/listing/parse", json={"text": pasted})
+        assert response.status_code == 422
+        assert response.json()["detail"].startswith("Questa è la richiesta per Claude")
+    # An answer that only mentions the format is still read.
+    answer = parse(client, "TITOLO: Giacca\nDESCRIZIONE:\nBella.\nVERIFICA: Rispondi solo in questo formato?")
+    assert answer["title"] == "Giacca"
+
+
+def test_new_purchase_has_no_merchant_unless_given(client):
+    plain = make_item(client, purchase=bought())
+    assert plain["purchase"]["merchant_name"] is None
+    assert "Comprato a: 12,00 € il 2 novembre 2026\n" in request_text(client, plain["id"])["text"]
+    vinted = make_item(client, purchase=bought(merchant="Vinted"))
+    assert vinted["purchase"]["merchant_name"] == "Vinted"

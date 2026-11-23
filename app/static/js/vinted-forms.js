@@ -87,10 +87,11 @@ function dateField(id, onPick) {
 
 const bold = (text) => h('strong', {}, text);
 
-// The expense of an item bought to resell. Merchant "Vinted" unless changed
-// (a flea market, a shop): it sits in the panel, it rarely changes.
+// The expense of an item bought to resell. Where it was bought sits in the
+// panel; from 0.11.0 it starts empty (it was "Vinted"), with the merchants
+// already used as suggestions.
 export function purchaseFields({ users, me }) {
-  const state = { amount: '', date: todayIso(), paidBy: me.id, method: 'card', merchant: 'Vinted' };
+  const state = { amount: '', date: todayIso(), paidBy: me.id, method: 'card', merchant: '' };
   const amount = amountField({ id: 'purchase-amount', label: 'Prezzo pagato', onInput: (value) => { state.amount = value; } });
   const dateInput = dateField('purchase-date', (value) => { state.date = value; details.refresh(); });
   const merchantInput = h('input', {
@@ -130,7 +131,7 @@ export function purchaseFields({ users, me }) {
       return parts;
     },
     isChanged: () => state.date !== todayIso() || state.paidBy !== me.id || state.method !== 'card'
-      || state.merchant.trim() !== 'Vinted',
+      || state.merchant.trim() !== '',
     children: [
       h('label', { class: 'label', for: 'purchase-date' }, 'Data dell’acquisto'), dateInput,
       h('span', { class: 'label' }, 'Pagato da'),

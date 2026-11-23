@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { state, loadUsers, loadCategories, loadMerchants, clearState } from '../store.js';
 import {
-  h, toast, confirmDialog, promptDialog, currentMonth, todayIso, loadingBlock, errorBlock,
+  h, icon, toast, confirmDialog, promptDialog, choiceDialog, currentMonth, todayIso, loadingBlock, errorBlock,
   passwordField, passwordProblem, newPasswordDialog,
 } from '../ui.js';
 
@@ -90,27 +90,80 @@ function categoriesSection() {
 
 // --- merchants --------------------------------------------------------------
 
+// Search without case and accents: "caffe" finds "Caffè".
+function fold(text) {
+  return text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('it-IT').replace(/\s+/g, ' ').trim();
+}
+
+const countLabel = (count) => (count === 1 ? '1 spesa' : `${count} spese`);
+
+// 0.11.0: a search box, and the possible duplicates (names that look alike,
+// found by the server) with «Unisci» and «Non sono doppioni».
 function merchantsSection() {
   const list = h('ul', { class: 'manage-list' });
+  const duplicatesBox = h('div');
+  const allTitle = h('p', { class: 'all-title', hidden: true }, 'Tutti gli esercenti');
+  const search = h('input', {
+    class: 'input', type: 'search', autocomplete: 'off', enterkeyhint: 'search',
+    placeholder: 'Cerca un esercente', 'aria-label': 'Cerca un esercente',
+    oninput: () => draw(),
+  });
+  search.setAttribute('autocorrect', 'off');
+  search.setAttribute('spellcheck', 'false');
+  const searchBox = h('div', { class: 'search merchant-search', hidden: true }, icon('search'), search);
+  let merchants = [];
+  let pairs = [];
 
   async function refresh() {
-    const merchants = await loadMerchants({ force: true });
+    [merchants, pairs] = await Promise.all([
+      loadMerchants({ force: true }),
+      api.get('/merchants/duplicates'),
+    ]);
+    draw();
+  }
+
+  function draw() {
+    searchBox.hidden = merchants.length < 2;
+    const query = fold(search.value);
+    // The duplicates stay out of the way while searching.
+    duplicatesBox.replaceChildren(...(query || pairs.length === 0 ? [] : [
+      h('p', { class: 'dup-title' }, pairs.length === 1 ? '1 possibile doppione' : `${pairs.length} possibili doppioni`),
+      h('p', { class: 'dup-hint' }, 'Nomi che si assomigliano. Se sono lo stesso negozio, uniscili; se no, segnali come diversi e non compariranno più.'),
+      ...pairs.map(pairItem),
+    ]));
+    allTitle.hidden = Boolean(query) || pairs.length === 0;
     if (merchants.length === 0) {
       list.replaceChildren(h('li', { class: 'manage-empty' },
         'Gli esercenti compaiono qui dopo la prima spesa.'));
       return;
     }
     const sorted = [...merchants].sort((a, b) => a.name.localeCompare(b.name, 'it'));
-    list.replaceChildren(...sorted.map((merchant) => h('li', { class: 'manage-item' },
+    const shown = query ? sorted.filter((merchant) => fold(merchant.name).includes(query)) : sorted;
+    if (shown.length === 0) {
+      list.replaceChildren(h('li', { class: 'manage-empty' }, `Nessun esercente con «${search.value.trim()}».`));
+      return;
+    }
+    list.replaceChildren(...shown.map((merchant) => h('li', { class: 'manage-item' },
       h('span', { class: 'manage-name' },
         merchant.name,
-        h('span', { class: 'manage-count' },
-          merchant.expense_count === 1 ? '1 spesa' : `${merchant.expense_count} spese`)),
+        h('span', { class: 'manage-count' }, countLabel(merchant.expense_count))),
       h('span', { class: 'manage-actions' },
         h('button', { class: 'btn-text', type: 'button', onclick: () => rename(merchant) }, 'Rinomina'),
         merchants.length > 1
           ? h('button', { class: 'btn-text', type: 'button', onclick: () => merge(merchant, sorted) }, 'Unisci')
           : null))));
+  }
+
+  function pairItem(pair) {
+    const [first, second] = pair.merchants;
+    return h('div', { class: 'dup-item' },
+      h('div', { class: 'dup-names' },
+        ...pair.merchants.map((merchant) => h('span', { class: 'dup-name' },
+          merchant.name, h('span', { class: 'manage-count' }, countLabel(merchant.expense_count))))),
+      h('p', { class: 'dup-reason' }, pair.reason_name),
+      h('div', { class: 'dup-actions' },
+        h('button', { class: 'btn-text', type: 'button', onclick: () => notDuplicates(first, second) }, 'Non sono doppioni'),
+        h('button', { class: 'btn-text', type: 'button', onclick: () => mergePair(first, second) }, 'Unisci')));
   }
 
   async function rename(merchant) {
@@ -123,6 +176,20 @@ function merchantsSection() {
     } catch (error) { report(error, 'Non rinominato'); }
   }
 
+  async function confirmAndMerge(source, into) {
+    const confirmed = await confirmDialog({
+      title: 'Confermi l’unione?',
+      message: `Le spese di «${source.name}» passeranno a «${into.name}» e «${source.name}» sparirà. Non si può annullare.`,
+      confirmLabel: 'Unisci',
+    });
+    if (!confirmed) return;
+    try {
+      await api.post(`/merchants/${source.id}/merge`, { into_id: into.id });
+      await refresh();
+      toast('Esercenti uniti.', { kind: 'success' });
+    } catch (error) { report(error, 'Non uniti'); }
+  }
+
   async function merge(merchant, all) {
     const target = await promptDialog({
       title: `Unisci «${merchant.name}»`,
@@ -132,21 +199,43 @@ function merchantsSection() {
         .map((other) => ({ value: other.id, label: other.name })),
     });
     if (target === null) return;
-    const into = all.find((other) => String(other.id) === target);
-    const confirmed = await confirmDialog({
-      title: 'Confermi l’unione?',
-      message: `Le spese di «${merchant.name}» passeranno a «${into.name}» e «${merchant.name}» sparirà. Non si può annullare.`,
-      confirmLabel: 'Unisci',
-    });
-    if (!confirmed) return;
-    try {
-      await api.post(`/merchants/${merchant.id}/merge`, { into_id: into.id });
-      await refresh();
-      toast('Esercenti uniti.', { kind: 'success' });
-    } catch (error) { report(error, 'Non uniti'); }
+    await confirmAndMerge(merchant, all.find((other) => String(other.id) === target));
   }
 
-  return { element: list, refresh };
+  // «Unisci» on a pair: first which name to keep.
+  async function mergePair(first, second) {
+    const keep = await choiceDialog({
+      title: 'Quale nome tenere?',
+      text: 'Le spese dell’altro passano al nome che scegli.',
+      options: [first, second].map((merchant) => ({
+        value: merchant.id, label: merchant.name, meta: countLabel(merchant.expense_count),
+      })),
+    });
+    if (keep === null) return;
+    const [into, source] = keep === first.id ? [first, second] : [second, first];
+    await confirmAndMerge(source, into);
+  }
+
+  async function notDuplicates(first, second) {
+    try {
+      await api.post(`/merchants/${first.id}/distinct`, { other_id: second.id });
+      await refresh();
+    } catch (error) { report(error, 'Non salvato'); return; }
+    toast(`«${first.name}» e «${second.name}»: non compariranno più come doppioni.`, {
+      kind: 'success',
+      action: {
+        label: 'Annulla',
+        run: async () => {
+          try {
+            await api.del(`/merchants/${first.id}/distinct/${second.id}`);
+            await refresh();
+          } catch (error) { report(error, 'Non annullato'); }
+        },
+      },
+    });
+  }
+
+  return { element: h('div', {}, searchBox, duplicatesBox, allTitle, list), refresh };
 }
 
 // --- CSV export -------------------------------------------------------------
@@ -380,7 +469,7 @@ export async function mount(root, ctx) {
         h('span', { class: 'settings-hint' }, 'Abbonamenti, bollette e stipendi da registrare con un tocco')),
       h('span', { class: 'settings-go', 'aria-hidden': 'true' }, '›')),
     section('Categorie', 'Aggiungi, rinomina, disattiva', categories.element),
-    section('Esercenti', 'Rinomina o unisci i doppioni', merchants.element),
+    section('Esercenti', 'Cerca, rinomina, unisci i doppioni', merchants.element),
     section('Esporta CSV', 'Spese, entrate o articoli Vinted', exportSection()),
     section('Backup e ripristino', 'Scarica o ricarica tutti i dati', backupSection()),
     section('Account', 'Password, uscita', accountSection(users, ctx.navigate)),
