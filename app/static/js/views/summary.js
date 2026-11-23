@@ -7,7 +7,8 @@
 import { api } from '../api.js';
 import { state } from '../store.js';
 import {
-  h, mainHead, formatEuro, formatSignedEuro, formatShare, monthLabel, currentMonth, loadingBlock, errorBlock,
+  h, mainHead, formatEuro, formatSignedEuro, formatShare, monthLabel, currentMonth, latestPlannedMonth,
+  loadingBlock, errorBlock,
 } from '../ui.js';
 import { monthSwitcher, monthFromQuery } from './movements.js';
 import { explorePath } from './explore.js';
@@ -323,7 +324,7 @@ export async function mount(root, ctx) {
   async function show(nextMonth, { quiet = false } = {}) {
     month = nextMonth;
     history.replaceState(history.state, '', summaryPath(month));
-    switcherSlot.replaceChildren(monthSwitcher(month, show));
+    switcherSlot.replaceChildren(monthSwitcher(month, show, { max: latestPlannedMonth() }));
     if (!quiet) body.replaceChildren(loadingBlock());
     let summary;
     let trend;

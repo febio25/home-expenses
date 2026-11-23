@@ -5,7 +5,7 @@
 
 import { api } from '../api.js';
 import { loadCategories } from '../store.js';
-import { h, monthLabel, loadingBlock, errorBlock } from '../ui.js';
+import { h, monthLabel, latestPlannedMonth, loadingBlock, errorBlock } from '../ui.js';
 import { monthSwitcher, monthFromQuery, expenseList } from './movements.js';
 import { categoryPath, summaryPath } from './summary.js';
 
@@ -37,7 +37,7 @@ export async function mount(root, ctx) {
     month = nextMonth;
     history.replaceState(history.state, '', categoryPath(categoryId, month));
     backLink.href = summaryPath(month);
-    switcherSlot.replaceChildren(monthSwitcher(month, show));
+    switcherSlot.replaceChildren(monthSwitcher(month, show, { max: latestPlannedMonth() }));
     if (!quiet) body.replaceChildren(loadingBlock());
     let category;
     let expenses;

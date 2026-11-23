@@ -113,13 +113,17 @@ def list_expenses(
 
 
 def insert_expense(
-    db: sqlite3.Connection, user: sqlite3.Row, body: ExpenseCreate
+    db: sqlite3.Connection, user: sqlite3.Row, body: ExpenseCreate, *, planned: bool = False
 ) -> tuple[int, bool]:
     """Insert an expense without committing. Returns (id, created).
 
     With a ``client_uuid`` already known, nothing is inserted and the id of
     the existing expense is returned with ``created`` False. Also used when
     registering a recurring expense, inside the same transaction.
+
+    ``planned`` lets the date run up to a year ahead (see ``dates``): only
+    "Nuova spesa" asks for it. A recurring registration and the purchase of
+    a Vinted item are things that already happened.
     """
     if body.client_uuid:
         existing = db.execute(
@@ -129,7 +133,7 @@ def insert_expense(
             return existing["id"], False
 
     amount_cents = _amount(body.amount)
-    check_expense_date(body.expense_date)
+    check_expense_date(body.expense_date, planned=planned)
     _check_category(db, body.category_id, must_be_active=True)
     paid_by = body.paid_by_user_id if body.paid_by_user_id is not None else user["id"]
     _check_user(db, paid_by)
@@ -183,7 +187,7 @@ def create_expense(
     Retrying with the same ``client_uuid`` (for example after a dropped
     connection) returns the expense already saved, with status 200.
     """
-    expense_id, created = insert_expense(db, user, body)
+    expense_id, created = insert_expense(db, user, body, planned=True)
     if created:
         db.commit()
     else:
@@ -238,7 +242,8 @@ def update_expense(
     if "expense_date" in sent:
         if body.expense_date is None:
             raise HTTPException(status_code=422, detail="Inserisci una data.")
-        check_expense_date(body.expense_date)
+        # The purchase of a Vinted item cannot be in the future.
+        check_expense_date(body.expense_date, planned=current["vinted_item_id"] is None)
         changes["expense_date"] = body.expense_date.isoformat()
     if "paid_by_user_id" in sent:
         if body.paid_by_user_id is None:

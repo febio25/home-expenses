@@ -12,6 +12,14 @@ esposta su internet.
 - Inserimento rapido: importo, esercente (con suggerimenti), categoria, Salva.
 - Data, «pagato da», metodo di pagamento e nota hanno valori predefiniti
   (oggi, chi è collegato, carta) e si cambiano con un tocco.
+- Spese con data futura (dalla 0.12.0): una domiciliazione o una spesa già
+  nota si inserisce in anticipo, fino a 12 mesi da oggi (data in «Cambia»).
+  Conta subito nel suo mese (Movimenti, Riepilogo, istogramma, CSV) e porta
+  l'etichetta «Prevista» finché non arriva il giorno; per correggerla si apre
+  la spesa come sempre. Valgono ancora «non dopo oggi» le entrate, le date di
+  Vinted e la registrazione di una spesa ricorrente; *Esplora* conta fino a
+  oggi. Se per la stessa spesa esiste anche un modello ricorrente, alla
+  scadenza si tocca «Salta» invece di «Registra», per non averla due volte.
 - Lista dei movimenti per mese, con modifica ed eliminazione.
 - Ricerca nei movimenti (dalla 0.9.0): la barra sotto «Spese | Entrate» cerca
   in tutti i mesi, senza badare a maiuscole e accenti, in esercente, nota,
@@ -407,6 +415,11 @@ dell'acquisto, o il giorno in cui erano stati aggiunti); se un articolo non
 era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
+
+Dalla 0.11.0 alla 0.12.0 il database non cambia (schema invariato): cambiano
+solo le regole sulla data delle spese. Un backup della 0.12.0 si ripristina
+anche sulla 0.11.0, ma le spese con data futura resterebbero lì, senza
+etichetta e senza raggiungerle dai mesi successivi.
 
 Dalla 0.10.0 alla 0.11.0, al primo avvio il database aggiunge solo la
 tabella delle coppie di esercenti segnate come «Non sono doppioni» (vuota):

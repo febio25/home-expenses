@@ -135,6 +135,30 @@ export function shiftMonth(month, delta) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
 }
 
+// An expense may be dated ahead of time (0.12.0), as far as this many months
+// from today: the same window as the server (app/dates.py).
+export const PLANNED_MONTHS_AHEAD = 12;
+
+// Last day an expense may be dated. Day clamped to the length of the month,
+// like the server: 31 Aug + 6 months = 28 Feb.
+export function latestPlannedIso() {
+  const [year, month, day] = todayIso().split('-').map(Number);
+  const index = year * 12 + (month - 1) + PLANNED_MONTHS_AHEAD;
+  const targetYear = Math.floor(index / 12);
+  const targetMonth = index % 12; // 0-based
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return `${targetYear}-${pad(targetMonth + 1)}-${pad(Math.min(day, lastDay))}`;
+}
+
+export function latestPlannedMonth() {
+  return latestPlannedIso().slice(0, 7);
+}
+
+// A date still to come: its expense is "Prevista" until the day arrives.
+export function isPlanned(iso) {
+  return iso > todayIso();
+}
+
 function parseIso(iso) {
   const [year, month, day] = iso.split('-').map(Number);
   return new Date(year, month - 1, day || 1);

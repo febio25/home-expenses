@@ -5,7 +5,7 @@
 import { api } from '../api.js';
 import { state } from '../store.js';
 import {
-  h, icon, mainHead, formatEuro, monthLabel, dayLabel, dayMonthShort, currentMonth, shiftMonth,
+  h, icon, mainHead, formatEuro, monthLabel, dayLabel, dayMonthShort, currentMonth, shiftMonth, isPlanned, latestPlannedMonth,
   PAYMENT_LABELS, loadingBlock, errorBlock,
 } from '../ui.js';
 
@@ -44,9 +44,11 @@ export function movementsSwitch(active, month, navigate) {
     item('incomes', 'Entrate', incomesPath));
 }
 
-// Shared with the summary screen: "‹  novembre 2026  ›"
-export function monthSwitcher(month, onChange) {
-  const isCurrent = month >= currentMonth();
+// Shared with the summary screen: "‹  novembre 2026  ›". Forward stops at
+// the current month, or at `max`: the expense screens pass the last month an
+// expense can be planned in (0.12.0).
+export function monthSwitcher(month, onChange, { max = currentMonth() } = {}) {
+  const isLast = month >= max;
   return h('div', { class: 'month-switch' },
     h('button', {
       class: 'month-step', type: 'button', 'aria-label': 'Mese precedente',
@@ -54,7 +56,7 @@ export function monthSwitcher(month, onChange) {
     }, icon('left')),
     h('span', { class: 'month-name', 'aria-live': 'polite' }, monthLabel(month)),
     h('button', {
-      class: 'month-step', type: 'button', 'aria-label': 'Mese successivo', disabled: isCurrent,
+      class: 'month-step', type: 'button', 'aria-label': 'Mese successivo', disabled: isLast,
       onclick: () => onChange(shiftMonth(month, 1)),
     }, icon('right')));
 }
@@ -84,7 +86,8 @@ function expenseRow(expense, { showCategory = true, showDate = false } = {}) {
       h('span', { class: 'row-title' }, title),
       h('span', { class: 'row-meta' }, meta),
       expense.vinted_item_id ? vintedLine(expense.vinted_item_title) : null,
-      expense.note ? h('span', { class: 'row-note' }, expense.note) : null),
+      expense.note ? h('span', { class: 'row-note' }, expense.note) : null,
+      isPlanned(expense.expense_date) ? h('span', { class: 'tag tag-planned' }, 'Prevista') : null),
     h('span', { class: 'row-amount' }, formatEuro(expense.amount_cents)));
 }
 
@@ -233,7 +236,7 @@ export async function mount(root, ctx) {
     const mine = ++request;
     history.replaceState(history.state, '', withSearch(movementsPath(month), search));
     tabSlot.replaceChildren(movementsSwitch('expenses', month, ctx.navigate));
-    switcherSlot.replaceChildren(monthSwitcher(month, show));
+    switcherSlot.replaceChildren(monthSwitcher(month, show, { max: latestPlannedMonth() }));
     switcherSlot.hidden = Boolean(search); // a search looks at every month
     if (!quiet) body.replaceChildren(loadingBlock());
     const text = search;

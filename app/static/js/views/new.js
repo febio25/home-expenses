@@ -5,7 +5,8 @@ import { api } from '../api.js';
 import { state, loadUsers, loadCategories, loadMerchants, local } from '../store.js';
 import { createExpenseForm } from '../expense-form.js';
 import {
-  h, mainHead, toast, dismissToasts, vibrate, formatEuro, loadingBlock, errorBlock, newUuid, todayIso,
+  h, mainHead, toast, dismissToasts, vibrate, formatEuro, loadingBlock, errorBlock, newUuid, todayIso, isPlanned,
+  dayMonthShort,
 } from '../ui.js';
 
 const DRAFT_KEY = 'draft';
@@ -97,7 +98,9 @@ export async function mount(root, ctx) {
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       // Back to the top: the next expense starts from the amount, in view.
       document.getElementById('view').scrollTop = 0;
-      toast(`Salvata: ${formatEuro(expense.amount_cents)}${expense.merchant_name ? ` da ${expense.merchant_name}` : ''}`, {
+      // A planned expense says so: it will not show up under today.
+      const saved = isPlanned(expense.expense_date) ? `Prevista per il ${dayMonthShort(expense.expense_date)}` : 'Salvata';
+      toast(`${saved}: ${formatEuro(expense.amount_cents)}${expense.merchant_name ? ` da ${expense.merchant_name}` : ''}`, {
         kind: 'success',
         action: { label: 'Annulla', run: () => undo(expense) },
       });

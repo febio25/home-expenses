@@ -1,7 +1,7 @@
 // The expense form, shared by "Nuova spesa" and "Modifica spesa".
 // Order follows the thumb: amount, merchant, category; the rest has defaults.
 
-import { h, todayIso, PAYMENT_LABELS } from './ui.js';
+import { h, todayIso, latestPlannedIso, isPlanned, PAYMENT_LABELS } from './ui.js';
 
 const MAX_SUGGESTIONS = 6;
 // Light check for instant feedback; the server does the real parsing.
@@ -165,8 +165,10 @@ export function createExpenseForm({
   }
 
   // --- details (date, paid by, method, note) ------------------------------
-  // Same window as the server: from 2000 to today. A recurring template's
-  // next due date is naturally in the future, so it has no upper limit.
+  // Same window as the server: from 2000 to a year ahead (0.12.0: a direct
+  // debit or a bill whose date is known can be entered now). A recurring
+  // template's next due date is naturally in the future, so it has no upper
+  // limit.
   const dateInput = h('input', {
     class: 'input', id: 'expense-date', type: 'date', value: state.date, required: true, min: '2000-01-01',
     onchange: () => {
@@ -177,8 +179,11 @@ export function createExpenseForm({
     },
   });
   function updateDateLimit() {
-    if (!recurring) dateInput.max = todayIso();
+    if (!recurring) dateInput.max = latestPlannedIso();
   }
+  // Shown under the date while it is still to come.
+  const dateHint = h('p', { class: 'field-note', id: 'expense-date-hint', hidden: true },
+    'Data futura: la spesa conta già nel suo mese e porta l’etichetta «Prevista» fino a quel giorno.');
 
   function segmented(name, options, current, onPick) {
     const group = h('div', { class: 'seg', role: 'group' });
@@ -245,6 +250,9 @@ export function createExpenseForm({
     }
     parts.push(' paga ', bold(payer ? payer.display_name : '?'), ' con ', bold(PAYMENT_LABELS[state.method]));
     if (state.note.trim()) parts.push(', ', bold('con nota'));
+    const planned = !recurring && isPlanned(state.date);
+    if (planned) parts.push(', ', bold('spesa prevista'));
+    dateHint.hidden = !planned;
     summaryText.replaceChildren(...parts);
     const changedFromDefault = !recurring && (state.date !== todayIso()
       || state.paidBy !== me.id || state.method !== 'card' || Boolean(state.note.trim()));
@@ -254,6 +262,7 @@ export function createExpenseForm({
 
   panel.append(
     h('label', { class: 'label', for: 'expense-date' }, recurring ? 'Prossima scadenza' : 'Data'), dateInput,
+    ...(recurring ? [] : [dateHint]),
     ...(recurring ? [h('span', { class: 'label' }, 'Si ripete ogni'), intervalGroup] : []),
     h('span', { class: 'label' }, recurring ? 'Paga' : 'Pagato da'), paidByGroup,
     h('span', { class: 'label' }, 'Metodo di pagamento'), methodGroup,

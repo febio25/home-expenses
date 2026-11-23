@@ -17,6 +17,10 @@ EARLIEST_EXPENSE_DATE = date(2000, 1, 1)
 # The container clock is UTC while the phones are in Italy (one or two hours
 # ahead), so "today" on the phone can be "tomorrow" for the server.
 FUTURE_TOLERANCE = timedelta(days=1)
+# An expense may be entered ahead of time (a direct debit, a bill whose date
+# is known): up to this many months from today, a window that still catches
+# a mistyped year.
+PLANNED_MONTHS_AHEAD = 12
 
 
 def today() -> date:
@@ -24,10 +28,29 @@ def today() -> date:
     return date.today()
 
 
-def check_expense_date(value: date) -> None:
-    """Reject expense (and income) dates in the future or before 2000 (422)."""
+def latest_planned_date() -> date:
+    """Last day an expense may be dated: PLANNED_MONTHS_AHEAD months from the
+    phone's "today" (the server is a day behind at most, see FUTURE_TOLERANCE)."""
+    base = today() + FUTURE_TOLERANCE
+    return add_months(base, PLANNED_MONTHS_AHEAD, base.day)
+
+
+def check_expense_date(value: date, *, planned: bool = False) -> None:
+    """Reject dates before 2000 and dates in the future (422).
+
+    ``planned=True`` is for ordinary expenses, which may be dated up to
+    PLANNED_MONTHS_AHEAD months ahead. Incomes, Vinted dates and the
+    registration of a recurring expense stay "not after today".
+    """
     if value < EARLIEST_EXPENSE_DATE:
         raise HTTPException(status_code=422, detail="Data non valida: deve essere dal 2000 in poi.")
+    if planned:
+        if value > latest_planned_date():
+            raise HTTPException(
+                status_code=422,
+                detail=f"La data non può essere oltre {PLANNED_MONTHS_AHEAD} mesi da oggi.",
+            )
+        return
     if value > today() + FUTURE_TOLERANCE:
         raise HTTPException(status_code=422, detail="La data non può essere nel futuro.")
 
