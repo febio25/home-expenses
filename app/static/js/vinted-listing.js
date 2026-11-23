@@ -139,6 +139,20 @@ export function detailChips(details) {
   ].filter(Boolean);
 }
 
+// Every detail filled in, as [label, value], in reading order (0.13.0):
+// what the "Dettagli dell'articolo" box of the ad shows. `names` are the
+// field names from the API (loadListingOptions); unused fields are null.
+export function detailsRows(details, names = {}) {
+  const value = { ...details, kind: details.kind_name, condition: details.condition_name };
+  const order = [
+    ['kind', 'Che cos’è'], ['brand'], ['book_author'], ['book_publisher_year'], ['size'], ['condition'],
+    ['color_material'], ['measurements'], ['defects'], ['similar_prices', 'Prezzi simili su Vinted'],
+  ];
+  return order
+    .filter(([field]) => value[field])
+    .map(([field, label]) => [label || names[field] || field, value[field]]);
+}
+
 // "Con misure e difetti · prezzi simili: 20, 25, 18": the rest, in one line.
 export function detailsExtra(details) {
   const noted = [
@@ -305,7 +319,10 @@ export async function shareWithClaude(item) {
     await manualCopyDialog('Richiesta per Claude', ready.text, ready.file);
     return;
   }
-  toast('Richiesta copiata: in Claude tieni premuto nella chat e scegli «Incolla».', { kind: 'success', duration: 7000 });
+  // At the top: the share sheet that opens now covers the bottom of the screen.
+  toast('Richiesta copiata: in Claude tieni premuto nella chat e scegli «Incolla».', {
+    kind: 'success', duration: 10000, top: true,
+  });
   await sharePhoto(ready.file);
 }
 

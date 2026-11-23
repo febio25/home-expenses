@@ -789,3 +789,21 @@ dialog.viewer::backdrop { background: rgb(20 37 31 / 0.6); }
 /* 0.12.0: spese previste (con data futura) */
 .tag-planned { color: var(--primary-press); background: var(--primary-soft); border-color: var(--primary); }
 .field-note { margin: 6px 0 0; color: var(--muted); font-size: 0.8125rem; }
+
+/* 0.13.0: avviso in alto, sopra il menu Condividi del telefono */
+.toasts.toasts-top { top: calc(12px + env(safe-area-inset-top)); bottom: auto; }
+
+/* 0.13.0: dettagli dell'articolo da rivedere nel riquadro Annuncio */
+.details-toggle {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px;
+  background: none; border: 0; text-align: left; color: inherit; font: inherit;
+}
+.details-toggle:active { background: var(--primary-soft); }
+.details-toggle .info-main { gap: 2px; }
+.details-toggle-action { flex: none; color: var(--primary); font-weight: 650; font-size: 0.875rem; }
+.details-toggle .info-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.details-list { margin: 0; padding: 0 14px 4px; display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 6px; }
+.details-list dt { color: var(--muted); font-size: 0.8125rem; padding-top: 1px; }
+.details-list dd { margin: 0; overflow-wrap: anywhere; }
+.details-edit { padding: 4px 14px 8px; }
+.listing-card .details-box + .info, .listing-card .info + .details-box { border-top: 1px solid var(--line); }

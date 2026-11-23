@@ -416,7 +416,8 @@ era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
 
-Dalla 0.11.0 alla 0.12.0 il database non cambia (schema invariato): cambiano
+Dalla 0.12.0 alla 0.13.0 il database non cambia (solo l'interfaccia della
+scheda Vinted). Dalla 0.11.0 alla 0.12.0 il database non cambia (schema invariato): cambiano
 solo le regole sulla data delle spese. Un backup della 0.12.0 si ripristina
 anche sulla 0.11.0, ma le spese con data futura resterebbero lì, senza
 etichetta e senza raggiungerle dai mesi successivi.
@@ -624,7 +625,9 @@ dell'articolo (0.11.0):
    - **con la foto:** l'app copia la richiesta negli appunti e apre il menu
      Condividi con la sola foto (l'app Claude per Android, ricevendo testo
      e foto insieme, tiene solo la foto). Scegli Claude; nella chat tieni
-     premuto nel campo del messaggio, scegli **Incolla** e invia;
+     premuto nel campo del messaggio, scegli **Incolla** e invia. Dalla
+     0.13.0 l'avviso «Richiesta copiata…» compare in alto, dove il menu
+     Condividi non lo copre;
    - **senza foto:** il menu Condividi riceve direttamente la richiesta.
 
    «Copia solo la richiesta» copia il testo senza condividere nulla.
@@ -640,12 +643,17 @@ dell'articolo (0.11.0):
 5. **Annuncio pronto:** il riquadro mostra titolo, descrizione e prezzo, ognuno
    con «Copia», e il promemoria per Vinted. Pubblichi a mano su Vinted, poi
    **Segna come pubblicato**: il prezzo di quel giorno diventa il prezzo di
-   partenza. «Chiedi di nuovo» ripropone i passi.
+   partenza. «Chiedi di nuovo» ripropone i passi. Dalla 0.13.0 la riga
+   **Dettagli dell'articolo** (chiusa: tipo, marca, taglia, stato in una
+   riga) si apre con «Mostra ▾» e mostra tutti i dettagli compilati (anche
+   misure, difetti, prezzi simili) con «Modifica dettagli», senza passare
+   da «Chiedi di nuovo».
 6. **In vendita:** in cima il prezzo su Vinted con «Cambia» (lo storico dei
    prezzi finisce nel CSV: `prezzo_partenza`, `cambi_prezzo`), poi titolo e
    descrizione con «Copia» e «Non si vende? Chiedi a Claude un prezzo
    nuovo»: la richiesta dice da quanti giorni e a che prezzo è in vendita.
-   Venduto o ritirato: resta solo il testo, se c'è.
+   Anche qui c'è la riga *Dettagli dell'articolo*. Venduto o ritirato: resta
+   solo il testo, se c'è, con i dettagli da rivedere (senza modifica).
 
 Il **titolo dell'annuncio** parte dal nome dell'articolo: finché non salvi un
 titolo diverso (di solito quello di Claude), «Copia» copia il nome, e se

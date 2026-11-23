@@ -23,7 +23,7 @@ import { thumbButton, choosePhotoFor } from '../photo.js';
 import { itemPath, dayMonth, sinceLabel, daysBetween, gainSpan, captionOf, waitingSince } from './vinted.js';
 import {
   shareWithClaude, copyRequest, prepareRequest, forgetRequest, readAnswer, keepAnswer, copyText, detailsSummary,
-  detailsProgress, detailChips, detailsExtra, priceInput,
+  detailsProgress, detailChips, detailsExtra, detailsRows, loadListingOptions, priceInput,
 } from '../vinted-listing.js';
 
 function statusText(item) {
@@ -367,6 +367,46 @@ export async function mount(root, ctx) {
     return h('div', { class: 'card listing-card' }, ...rows);
   }
 
+  // "Dettagli dell'articolo" (0.13.0): once the ad is written the steps are
+  // gone, and with them the details. Closed it is one line; open, every
+  // detail filled in, with "Modifica dettagli". Stays open across redraws.
+  let detailsOpen = false;
+  let fieldNames = null; // from the API, loaded at the first opening
+  function detailsBox({ edit = true } = {}) {
+    const rows = detailsRows(item.details, fieldNames || {});
+    if (!rows.length && !edit) return null;
+    const summary = detailsSummary(item.details);
+    const toggle = h('button', {
+      class: 'details-toggle', type: 'button', 'aria-expanded': String(detailsOpen),
+      onclick: async () => {
+        detailsOpen = !detailsOpen;
+        if (detailsOpen && !fieldNames) {
+          try {
+            const options = await loadListingOptions();
+            fieldNames = Object.fromEntries(options.fields.map((field) => [field.field, field.name]));
+          } catch (error) { fieldNames = {}; } // the labels fall back to the field codes
+        }
+        draw();
+      },
+    },
+    h('span', { class: 'info-main' },
+      h('span', { class: 'info-label' }, 'Dettagli dell’articolo'),
+      h('span', { class: 'info-meta' }, rows.length ? summary || `${rows.length} indicati` : 'Nessun dettaglio indicato')),
+    h('span', { class: 'details-toggle-action', 'aria-hidden': 'true' }, detailsOpen ? 'Chiudi ▴' : 'Mostra ▾'));
+    const box = h('div', { class: 'details-box' }, toggle);
+    if (detailsOpen) {
+      if (rows.length) {
+        box.append(h('dl', { class: 'details-list' },
+          rows.flatMap(([label, value]) => [h('dt', {}, label), h('dd', {}, value)])));
+      }
+      if (edit) {
+        box.append(h('div', { class: 'details-edit' },
+          link(rows.length ? 'Modifica dettagli' : 'Aggiungi dettagli', detailsPath, ' btn-text-start')));
+      }
+    }
+    return box;
+  }
+
   function priceRow(listing, { change = false } = {}) {
     if (!listing.price_cents) {
       return h('div', { class: 'info' },
@@ -394,6 +434,7 @@ export async function mount(root, ctx) {
       textRow('Titolo', listing.effective_title, 'Titolo copiato.'),
       textRow('Descrizione', listing.description, 'Descrizione copiata.', { clamp: true }),
       listing.price_cents ? priceRow(listing) : null,
+      detailsBox(),
       h('div', { class: 'info info-center listing-links' },
         link('Modifica annuncio', listingPath),
         textButton('Chiedi di nuovo', () => { asking = true; draw(); })));
@@ -406,6 +447,7 @@ export async function mount(root, ctx) {
       priceRow(listing, { change: true }),
       textRow('Titolo', listing.effective_title, 'Titolo copiato.'),
       textRow('Descrizione', listing.description, 'Descrizione copiata.', { clamp: true }),
+      detailsBox(),
       h('div', { class: 'info info-center' },
         h('span', { class: 'step-text' }, 'Non si vende? ',
           textButton('Chiedi a Claude un prezzo nuovo', () => { asking = true; draw(); }))),
@@ -419,6 +461,7 @@ export async function mount(root, ctx) {
       textRow('Titolo', listing.effective_title, 'Titolo copiato.', { copy: false }),
       listing.description ? textRow('Descrizione', listing.description, '', { clamp: true, copy: false }) : null,
       listing.price_cents ? priceRow(listing) : null,
+      detailsBox({ edit: false }),
       h('div', { class: 'info info-center' }, link('Modifica annuncio', listingPath)));
   }
 

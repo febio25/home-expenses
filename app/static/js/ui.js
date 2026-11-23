@@ -193,6 +193,10 @@ export const PAYMENT_LABELS = { card: 'Carta', cash: 'Contanti', other: 'Altro' 
 export function placeToasts() {
   const host = document.getElementById('toasts');
   if (!host || !host.firstChild) return;
+  if (host.classList.contains('toasts-top')) { // see toast({ top: true })
+    host.style.bottom = '';
+    return;
+  }
   const visible = (node) => Boolean(node && node.getClientRects().length);
   const footer = document.querySelector('#view .footer-bar');
   const nav = document.getElementById('nav');
@@ -207,9 +211,12 @@ export function placeToasts() {
 
 // toast('Spesa salvata', { action: { label: 'Annulla', run: fn }, kind: 'error' })
 // Tapping the message closes it at once: a toast never has to be waited out.
+// top: true (0.13.0) puts it at the top of the screen, for a message shown
+// while the phone's share sheet covers the bottom half.
 // Returns a function that closes this toast.
-export function toast(message, { action = null, kind = 'info', duration = 5000 } = {}) {
+export function toast(message, { action = null, kind = 'info', duration = 5000, top = false } = {}) {
   const host = document.getElementById('toasts');
+  host.classList.toggle('toasts-top', top);
   const element = h('div', { class: `toast toast-${kind}`, role: kind === 'error' ? 'alert' : 'status' },
     h('span', { class: 'toast-text' }, message));
   const close = () => element.remove();
