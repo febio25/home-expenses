@@ -7,6 +7,12 @@ So the household totals, the summary and the CSV exports count Vinted with
 no extra code, and an amount corrected in "Movimenti" is the item's amount
 too. Deleting that expense or income leaves the item without it (ON DELETE
 SET NULL); deleting the item deletes both.
+
+From 0.10.0 an item can wait before it goes on Vinted: ``listed_on`` is the
+day it was published there, NULL until then (status "unlisted", "Da
+pubblicare" in the app). An item also has the details and the text of its
+ad, written with Claude by hand (app/vinted_listing.py), and the history of
+its asking price on Vinted.
 """
 
 from __future__ import annotations
@@ -19,10 +25,13 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from .. import dates
+from .. import dates, vinted_listing
 from ..dates import check_expense_date, month_bounds, resolve_range
 from ..db import get_db, utc_now
 from ..schemas import (
+    VINTED_CONDITIONS,
+    VINTED_KINDS,
+    VINTED_TEXT_LIMITS,
     ExpenseCreate,
     ExpenseOut,
     IncomeCreate,
@@ -31,6 +40,11 @@ from ..schemas import (
     VintedItemCreate,
     VintedItemOut,
     VintedItemUpdate,
+    VintedListingIn,
+    VintedListingOptionsOut,
+    VintedListingParseIn,
+    VintedListingParseOut,
+    VintedListingRequestOut,
     VintedPeriodOut,
     VintedPhotoIn,
     VintedPurchaseIn,
@@ -38,7 +52,7 @@ from ..schemas import (
     VintedSummaryOut,
 )
 from ..security import current_user
-from .expenses import EXPENSE_SELECT, _clean_note, insert_expense
+from .expenses import EXPENSE_SELECT, _amount, _clean_note, insert_expense
 from .incomes import INCOME_SELECT, income_out, insert_income
 from .merchants import prune_merchant
 from .summary import trend_skeleton
@@ -58,6 +72,9 @@ UNLINKED_LIMIT = 60
 
 ITEM_SELECT = """
 SELECT v.id, v.title, v.note, v.listed_on, v.is_withdrawn, v.created_at, v.updated_at,
+       v.kind, v.brand, v.size, v.condition, v.color_material, v.measurements,
+       v.book_author, v.book_publisher_year, v.defects, v.similar_prices,
+       v.listing_title, v.listing_description, v.price_cents, v.min_price_cents,
        author.display_name AS created_by_name,
        p.token AS photo,
        e.id AS e_id, e.amount_cents AS e_amount, e.expense_date AS e_date,
@@ -76,7 +93,22 @@ SELECT v.id, v.title, v.note, v.listed_on, v.is_withdrawn, v.created_at, v.updat
 """
 
 
-def item_out(row: sqlite3.Row) -> dict:
+# The day that places an item in time, for sorting: sale, else publication,
+# else purchase, else the day it was added (UTC: off by one at most near midnight).
+ITEM_DATE = "COALESCE(i.income_date, v.listed_on, e.expense_date, substr(v.created_at, 1, 10))"
+
+
+# Detail columns of vinted_items: one line of text each.
+DETAIL_TEXT_FIELDS = [
+    "brand", "size", "color_material", "measurements", "book_author", "book_publisher_year",
+    "defects", "similar_prices",
+]
+
+
+def item_out(row: sqlite3.Row, price_changes: list[dict] | None = None) -> dict:
+    """An item as the API returns it. ``price_changes``: its rows of
+    vinted_price_changes, oldest first (none if not given)."""
+    price_changes = price_changes or []
     purchase = None
     if row["e_id"] is not None:
         purchase = {
@@ -99,8 +131,10 @@ def item_out(row: sqlite3.Row) -> dict:
         }
     if sale:
         status = "sold"
+    elif row["is_withdrawn"]:
+        status = "withdrawn"
     else:
-        status = "withdrawn" if row["is_withdrawn"] else "listed"
+        status = "listed" if row["listed_on"] is not None else "unlisted"
     # Things already at home cost nothing: their gain is the whole price.
     gain = sale["amount_cents"] - (purchase["amount_cents"] if purchase else 0) if sale else None
     return {
@@ -113,17 +147,52 @@ def item_out(row: sqlite3.Row) -> dict:
         "purchase": purchase,
         "sale": sale,
         "gain_cents": gain,
+        "details": {
+            "kind": row["kind"],
+            "kind_name": VINTED_KINDS.get(row["kind"]) if row["kind"] else None,
+            "condition": row["condition"],
+            "condition_name": VINTED_CONDITIONS.get(row["condition"]) if row["condition"] else None,
+            **{field: row[field] for field in DETAIL_TEXT_FIELDS},
+        },
+        "listing": {
+            "title": row["listing_title"],
+            "description": row["listing_description"],
+            "price_cents": row["price_cents"],
+            "min_price_cents": row["min_price_cents"],
+            "start_price_cents": price_changes[0]["price_cents"] if price_changes else None,
+            "price_changes": price_changes,
+        },
         "created_by_name": row["created_by_name"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
 
 
+def price_changes_of(db: sqlite3.Connection, item_id: int | None = None) -> dict[int, list[dict]]:
+    """Price history by item id (of one item, or of all), oldest first."""
+    query = "SELECT item_id, price_cents, changed_on FROM vinted_price_changes"
+    params: tuple = ()
+    if item_id is not None:
+        query += " WHERE item_id = ?"
+        params = (item_id,)
+    history: dict[int, list[dict]] = {}
+    for row in db.execute(f"{query} ORDER BY changed_on, id", params):
+        history.setdefault(row["item_id"], []).append(
+            {"price_cents": row["price_cents"], "changed_on": row["changed_on"]}
+        )
+    return history
+
+
+def items_out(db: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dict]:
+    history = price_changes_of(db)
+    return [item_out(row, history.get(row["id"])) for row in rows]
+
+
 def fetch_item(db: sqlite3.Connection, item_id: int) -> dict:
     row = db.execute(f"{ITEM_SELECT} WHERE v.id = ?", (item_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Articolo non trovato.")
-    return item_out(row)
+    return item_out(row, price_changes_of(db, item_id).get(item_id))
 
 
 def _item_row(db: sqlite3.Connection, item_id: int) -> sqlite3.Row:
@@ -138,6 +207,128 @@ def vinted_category_id(db: sqlite3.Connection) -> int:
     if row is None:  # created by migration 005: only a damaged database lacks it
         raise HTTPException(status_code=500, detail="Manca la categoria Vinted.")
     return row["id"]
+
+
+def check_listed_on(listed_on: date, purchase_date: str | None, sale_date: str | None) -> None:
+    """The day an item went on Vinted: a real day, not in the future, not
+    before it was bought and not after it was sold (422)."""
+    check_expense_date(listed_on)
+    if purchase_date is not None and listed_on < date.fromisoformat(purchase_date):
+        raise HTTPException(
+            status_code=422, detail="La data di pubblicazione non può essere prima dell'acquisto."
+        )
+    if sale_date is not None and listed_on > date.fromisoformat(sale_date):
+        raise HTTPException(
+            status_code=422, detail="La data di pubblicazione non può essere dopo la vendita."
+        )
+
+
+def _clean_line(text: str | None) -> str | None:
+    if text is None:
+        return None
+    return " ".join(text.split()) or None
+
+
+def _clean_text(text: str | None) -> str | None:
+    """Several lines (the description of an ad): spaces at the end of each
+    line and runs of blank lines removed."""
+    if text is None:
+        return None
+    lines = [line.rstrip() for line in text.replace("\r\n", "\n").split("\n")]
+    cleaned = "\n".join(lines).strip()
+    while "\n\n\n" in cleaned:
+        cleaned = cleaned.replace("\n\n\n", "\n\n")
+    return cleaned or None
+
+
+def _optional_amount(text: str | None) -> int | None:
+    if text is None or not text.strip():
+        return None
+    return _amount(text)
+
+
+def listing_changes(body: VintedListingIn, sent: set[str]) -> dict[str, object]:
+    """Columns to write for the details and listing fields present in the
+    body (all of them when creating): null or blank clears a field."""
+    changes: dict[str, object] = {}
+    if "kind" in sent:
+        changes["kind"] = body.kind
+    if "condition" in sent:
+        changes["condition"] = body.condition
+    for field in DETAIL_TEXT_FIELDS:
+        if field in sent:
+            changes[field] = _clean_line(getattr(body, field))
+    if "listing_title" in sent:
+        changes["listing_title"] = _clean_line(body.listing_title)
+    if "listing_description" in sent:
+        changes["listing_description"] = _clean_text(body.listing_description)
+    if "price" in sent:
+        changes["price_cents"] = _optional_amount(body.price)
+    if "min_price" in sent:
+        changes["min_price_cents"] = _optional_amount(body.min_price)
+    return changes
+
+
+def check_prices(price: int | None, minimum: int | None) -> None:
+    if price is not None and minimum is not None and minimum > price:
+        raise HTTPException(
+            status_code=422, detail="Il prezzo minimo non può superare il prezzo dell'annuncio."
+        )
+
+
+def sync_price_history(
+    db: sqlite3.Connection,
+    item_id: int,
+    before: tuple[str | None, int | None],
+    after: tuple[str | None, int | None],
+    on_sale: bool,
+) -> None:
+    """Keep vinted_price_changes in step with (listed_on, price_cents),
+    before and after a change. The first row is the price on the day the
+    item was published, and stays; then a row for each day the price
+    changed while it was on sale (a second change on the same day corrects
+    that day's row). An item taken back to "Da pubblicare" was never on
+    Vinted: no history."""
+    old_listed, old_price = before
+    new_listed, new_price = after
+    if new_listed is None:
+        db.execute("DELETE FROM vinted_price_changes WHERE item_id = ?", (item_id,))
+        return
+    now = utc_now()
+
+    def add(price: int, day: str) -> None:
+        db.execute(
+            "INSERT INTO vinted_price_changes (item_id, price_cents, changed_on, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (item_id, price, day, now),
+        )
+
+    if old_listed is None:  # published now
+        db.execute("DELETE FROM vinted_price_changes WHERE item_id = ?", (item_id,))
+        if new_price is not None:
+            add(new_price, new_listed)
+        return
+    rows = db.execute(
+        "SELECT id, price_cents, changed_on FROM vinted_price_changes WHERE item_id = ?"
+        " ORDER BY changed_on, id",
+        (item_id,),
+    ).fetchall()
+    if new_listed != old_listed and rows:
+        db.execute(
+            "UPDATE vinted_price_changes SET changed_on = ? WHERE id = ?", (new_listed, rows[0]["id"])
+        )
+    if new_price is None or new_price == old_price or not on_sale:
+        return
+    today = max(dates.today().isoformat(), new_listed)
+    last = rows[-1] if rows else None
+    if last is None:
+        add(new_price, today)
+    elif last["price_cents"] == new_price:
+        return
+    elif last["changed_on"] == today and len(rows) > 1:
+        db.execute("UPDATE vinted_price_changes SET price_cents = ? WHERE id = ?", (new_price, last["id"]))
+    else:
+        add(new_price, today)
 
 
 def _clean_title(title: str | None) -> str:
@@ -233,16 +424,15 @@ def _sale(db: sqlite3.Connection, user: sqlite3.Row, body: VintedSaleIn) -> int:
 
 @router.get("/items", response_model=list[VintedItemOut])
 def list_items(
-    status: str | None = Query(None, pattern="^(listed|sold|withdrawn)$"),
+    status: str | None = Query(None, pattern="^(unlisted|listed|sold|withdrawn)$"),
     user: sqlite3.Row = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """All items, newest first (sold ones by sale date). With ``status``,
-    only listed, sold or withdrawn ones."""
-    rows = db.execute(
-        f"{ITEM_SELECT} ORDER BY COALESCE(i.income_date, v.listed_on) DESC, v.id DESC"
-    ).fetchall()
-    items = [item_out(row) for row in rows]
+    """All items, newest first: sold ones by sale date, the others by the
+    day they went on Vinted, items not on Vinted yet by purchase date (or
+    the day they were added). With ``status``, only the items in it."""
+    rows = db.execute(f"{ITEM_SELECT} ORDER BY {ITEM_DATE} DESC, v.id DESC").fetchall()
+    items = items_out(db, rows)
     if status:
         items = [item for item in items if item["status"] == status]
     return items
@@ -256,7 +446,8 @@ def create_item(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Add an item, with its purchase if it was bought to resell: a new
-    expense in the Vinted category, or one already recorded there.
+    expense in the Vinted category, or one already recorded there. Without
+    ``listed_on`` the item is not on Vinted yet ("Da pubblicare").
 
     Retrying with the same ``client_uuid`` returns the item already saved,
     with status 200.
@@ -274,28 +465,28 @@ def create_item(
     if body.purchase is not None:
         expense_id, purchase_date = _purchase(db, user, body.purchase)
     if body.listed_on is not None:
-        listed_on = body.listed_on
-    elif purchase_date is not None:
-        listed_on = date.fromisoformat(purchase_date)
-    else:
-        listed_on = dates.today()
-    check_expense_date(listed_on)
+        check_listed_on(body.listed_on, purchase_date, None)
+    listing = listing_changes(body, set(VintedListingIn.model_fields))
+    check_prices(listing["price_cents"], listing["min_price_cents"])
+    listed_on = body.listed_on.isoformat() if body.listed_on is not None else None
 
     now = utc_now()
+    columns = {
+        "client_uuid": body.client_uuid,
+        "title": title,
+        "note": _clean_note(body.note),
+        "listed_on": listed_on,
+        "purchase_expense_id": expense_id,
+        "created_by_user_id": user["id"],
+        "created_at": now,
+        "updated_at": now,
+        **listing,
+    }
     try:
         cursor = db.execute(
-            "INSERT INTO vinted_items (client_uuid, title, note, listed_on, purchase_expense_id,"
-            " created_by_user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                body.client_uuid,
-                title,
-                _clean_note(body.note),
-                listed_on.isoformat(),
-                expense_id,
-                user["id"],
-                now,
-                now,
-            ),
+            f"INSERT INTO vinted_items ({', '.join(columns)})"
+            f" VALUES ({', '.join('?' for _ in columns)})",
+            tuple(columns.values()),
         )
     except sqlite3.IntegrityError:
         # Two identical retries raced: the other one won (and stored the
@@ -308,6 +499,7 @@ def create_item(
             raise
         response.status_code = 200
         return fetch_item(db, existing["id"])
+    sync_price_history(db, cursor.lastrowid, (None, None), (listed_on, listing["price_cents"]), True)
     db.commit()
     return fetch_item(db, cursor.lastrowid)
 
@@ -328,8 +520,11 @@ def update_item(
     user: sqlite3.Row = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Title, note, withdrawn. Prices and dates belong to the expense and
-    the income: change them there (PATCH /expenses/{id}, /incomes/{id})."""
+    """Title, note, day of publication on Vinted (null: not on Vinted yet),
+    withdrawn, the details and the listing (text and asking price; a new
+    price of an item on sale goes into its price history). The prices and
+    dates of purchase and sale belong to the expense and the income: change
+    them there (PATCH /expenses/{id}, /incomes/{id})."""
     item = _item_row(db, item_id)
     sent = body.model_fields_set
     changes: dict[str, object] = {}
@@ -337,6 +532,17 @@ def update_item(
         changes["title"] = _clean_title(body.title)
     if "note" in sent:
         changes["note"] = _clean_note(body.note)
+    if "listed_on" in sent:
+        if body.listed_on is not None:
+            linked = db.execute(
+                "SELECT e.expense_date, i.income_date FROM vinted_items v"
+                "  LEFT JOIN expenses e ON e.id = v.purchase_expense_id"
+                "  LEFT JOIN incomes i ON i.id = v.sale_income_id"
+                " WHERE v.id = ?",
+                (item_id,),
+            ).fetchone()
+            check_listed_on(body.listed_on, linked["expense_date"], linked["income_date"])
+        changes["listed_on"] = body.listed_on.isoformat() if body.listed_on is not None else None
     if "is_withdrawn" in sent:
         if body.is_withdrawn is None:
             raise HTTPException(status_code=422, detail="Indica se l'articolo è ritirato.")
@@ -346,14 +552,63 @@ def update_item(
                 detail="Un articolo venduto non si può ritirare: annulla prima la vendita.",
             )
         changes["is_withdrawn"] = int(body.is_withdrawn)
+    changes.update(listing_changes(body, sent))
+    check_prices(
+        changes.get("price_cents", item["price_cents"]),
+        changes.get("min_price_cents", item["min_price_cents"]),
+    )
     if changes:
         changes["updated_at"] = utc_now()
         assignments = ", ".join(f"{column} = ?" for column in changes)
         db.execute(
             f"UPDATE vinted_items SET {assignments} WHERE id = ?", (*changes.values(), item_id)
         )
+        on_sale = item["sale_income_id"] is None and not changes.get("is_withdrawn", item["is_withdrawn"])
+        sync_price_history(
+            db,
+            item_id,
+            (item["listed_on"], item["price_cents"]),
+            (changes.get("listed_on", item["listed_on"]), changes.get("price_cents", item["price_cents"])),
+            on_sale,
+        )
         db.commit()
     return fetch_item(db, item_id)
+
+
+# --- listings written with Claude ---------------------------------------------------
+
+
+@router.get("/listing/options", response_model=VintedListingOptionsOut)
+def listing_options(user: sqlite3.Row = Depends(current_user)):
+    """The kinds of item (with the details asked for each), the conditions
+    with the words of the Vinted app, and the names of the detail fields."""
+    return vinted_listing.options()
+
+
+@router.get("/items/{item_id}/listing-request", response_model=VintedListingRequestOut)
+def listing_request(
+    item_id: int,
+    user: sqlite3.Row = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """The message to share with Claude: the item's data, the rules and the
+    answer format that POST /vinted/listing/parse reads back. For an item
+    already on sale it asks for an updated price."""
+    item = fetch_item(db, item_id)
+    return {"text": vinted_listing.build_request(item, dates.today()), "has_photo": item["photo"] is not None}
+
+
+@router.post("/listing/parse", response_model=VintedListingParseOut)
+def listing_parse(body: VintedListingParseIn, user: sqlite3.Row = Depends(current_user)):
+    """Read Claude's answer: title, description, price, minimum and the
+    things to check. Saves nothing; never fails on an answer out of format
+    (then the whole text is the description)."""
+    parsed = vinted_listing.parse_answer(body.text)
+    if parsed["title"]:
+        parsed["title"] = parsed["title"][: VINTED_TEXT_LIMITS["listing_title"]]
+    if parsed["description"]:
+        parsed["description"] = parsed["description"][: VINTED_TEXT_LIMITS["listing_description"]]
+    return parsed
 
 
 @router.delete("/items/{item_id}", status_code=204)
@@ -433,7 +688,7 @@ def cancel_sale(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """A return, or a sale marked by mistake: the income is deleted and the
-    item is on sale again."""
+    item is back where it was: on sale, or not on Vinted yet."""
     item = _item_row(db, item_id)
     if item["sale_income_id"] is None:
         raise HTTPException(status_code=409, detail="L'articolo non risulta venduto.")

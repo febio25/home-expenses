@@ -1,6 +1,9 @@
 // "Nuovo articolo" (0.8.0): title, an optional photo, and whether it was
 // bought to resell (then its purchase: a new expense in the Vinted category,
 // or one already recorded from "Nuova spesa") or was already at home.
+// 0.10.0: whether it is on Vinted already (usually not: it waits among the
+// items "Da pubblicare" until it is published), and, if wanted, the details
+// Claude will write its ad from (vinted-listing.js).
 
 import { api } from '../api.js';
 import { state, loadUsers } from '../store.js';
@@ -9,7 +12,8 @@ import {
 } from '../ui.js';
 import { pickImage, preparePhoto } from '../photo.js';
 import { purchaseFields } from '../vinted-forms.js';
-import { dayMonth } from './vinted.js';
+import { dayMonth, showFilterNext } from './vinted.js';
+import { loadListingOptions, detailsFields } from '../vinted-listing.js';
 
 function expenseOption(expense) {
   return {
@@ -24,8 +28,10 @@ export async function mount(root, ctx) {
   root.append(loadingBlock());
   let users;
   let waiting;
+  let options;
   try {
-    [users, waiting] = await Promise.all([loadUsers(), api.get('/vinted/unlinked-expenses')]);
+    [users, waiting, options] = await Promise.all([
+      loadUsers(), api.get('/vinted/unlinked-expenses'), loadListingOptions()]);
   } catch (error) {
     if (ctx.isCurrent()) root.replaceChildren(errorBlock(error, () => ctx.navigate('/vinted/nuovo', { replace: true })));
     return;
@@ -136,6 +142,46 @@ export async function mount(root, ctx) {
     boughtBlock.hidden = !bought;
   }
 
+  // --- on Vinted already? ---------------------------------------------------------
+  let published = false;
+  const listedError = h('p', { class: 'field-error', hidden: true });
+  const listedInput = h('input', {
+    class: 'input', id: 'item-listed', type: 'date', value: todayIso(), min: '2000-01-01', max: todayIso(),
+    required: true, onchange: () => { listedError.hidden = true; hideError(); },
+  });
+  const listedBlock = h('div', { hidden: true },
+    h('label', { class: 'label', for: 'item-listed' }, 'Pubblicato il'), listedInput, listedError);
+  const onVinted = h('div', { class: 'seg seg-compact', role: 'group', 'aria-labelledby': 'item-on-vinted' });
+  function drawOnVinted() {
+    const option = (value, label) => h('button', {
+      class: `seg-item${published === value ? ' is-selected' : ''}`,
+      type: 'button',
+      'aria-pressed': String(published === value),
+      onclick: () => { published = value; drawOnVinted(); hideError(); },
+    }, label);
+    onVinted.replaceChildren(option(false, 'Non ancora'), option(true, 'Già pubblicato'));
+    listedBlock.hidden = !published;
+  }
+
+  // The day it went on Vinted: not before it was bought.
+  function listedDayProblem() {
+    const day = listedInput.value;
+    if (!day) return 'Scegli il giorno della pubblicazione.';
+    if (day > todayIso()) return 'La data non può essere nel futuro.';
+    const boughtOn = !bought ? null : linked ? linked.expense_date : purchase.toPayload().expense_date;
+    if (boughtOn && day < boughtOn) return `Non prima dell’acquisto (${dayMonth(boughtOn)}).`;
+    return null;
+  }
+
+  // --- details for the ad (optional, folded) -------------------------------------------
+  const details = detailsFields({ options, idPrefix: 'item' });
+  const detailsBlock = h('div', { hidden: true },
+    h('h2', { class: 'section-title' }, 'Dettagli per l’annuncio'), details.element);
+  const detailsToggle = h('button', {
+    class: 'btn btn-quiet btn-block details-toggle', type: 'button',
+    onclick: () => { detailsBlock.hidden = false; detailsToggle.hidden = true; },
+  }, 'Aggiungi dettagli per l’annuncio');
+
   // --- note, save -------------------------------------------------------------------
   const noteInput = h('input', {
     class: 'input', id: 'item-note', type: 'text', maxLength: 300, autocomplete: 'off',
@@ -160,6 +206,13 @@ export async function mount(root, ctx) {
       return;
     }
     if (bought && !linked && !purchase.validate()) return;
+    const listedProblem = published ? listedDayProblem() : null;
+    if (listedProblem) {
+      listedError.textContent = listedProblem;
+      listedError.hidden = false;
+      listedInput.focus();
+      return;
+    }
     hideError();
     saveButton.disabled = true;
     const payload = {
@@ -167,8 +220,9 @@ export async function mount(root, ctx) {
       note: noteInput.value.trim() || null,
       client_uuid: clientUuid,
     };
-    if (!bought) payload.listed_on = todayIso();
-    else payload.purchase = linked ? { expense_id: linked.id } : purchase.toPayload();
+    if (published) payload.listed_on = listedInput.value;
+    if (!detailsBlock.hidden) Object.assign(payload, details.toPayload());
+    if (bought) payload.purchase = linked ? { expense_id: linked.id } : purchase.toPayload();
     try {
       const item = await api.post('/vinted/items', payload);
       let photoFailed = false;
@@ -181,6 +235,7 @@ export async function mount(root, ctx) {
       } else {
         toast(`Articolo salvato: ${item.title}`, { kind: 'success' });
       }
+      showFilterNext(item.status); // the list opens where the new item is
       goBack();
     } catch (error) {
       saveButton.disabled = false;
@@ -201,6 +256,7 @@ export async function mount(root, ctx) {
   drawPhoto();
   drawOrigin();
   drawLinked();
+  drawOnVinted();
   root.replaceChildren(
     h('header', { class: 'page-head' },
       h('a', {
@@ -213,7 +269,9 @@ export async function mount(root, ctx) {
       h('span', { class: 'label' }, 'Foto ', h('span', { class: 'label-soft' }, '(facoltativa)')), photoSlot,
       h('span', { class: 'label', id: 'item-origin' }, 'L’hai comprato per rivenderlo?'), origin,
       boughtBlock,
-      h('label', { class: 'label', for: 'item-note' }, 'Nota'), noteInput),
+      h('span', { class: 'label', id: 'item-on-vinted' }, 'Su Vinted'), onVinted, listedBlock,
+      h('label', { class: 'label', for: 'item-note' }, 'Nota'), noteInput,
+      detailsToggle, detailsBlock),
     h('div', { class: 'footer-bar' }, errorBanner, saveButton));
   titleInput.focus({ preventScroll: true });
 }

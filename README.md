@@ -57,6 +57,17 @@ esposta su internet.
   rispetto alle soglie DAC7 (indicativo). Gli acquisti personali fatti su
   Vinted restano spese della loro categoria (Abbigliamento, Casa e utenze…);
   i costi extra (buste, spedizioni) sono spese *Vinted* senza articolo.
+- *Vinted*, dalla 0.10.0: un articolo nuovo resta **da pubblicare** finché
+  non lo segni come pubblicato su Vinted («Segna come pubblicato», un tocco:
+  oggi; la data si corregge dalla scheda). «In vendita da …» conta da quel
+  giorno. In cima alla lista quattro filtri a icona con il numero: da
+  pubblicare (nuvola), in vendita (negozio), venduti (moneta), tutti (pila,
+  ritirati compresi). La ricerca guarda tutti gli articoli.
+- *Annunci con Claude* (0.10.0): l'app prepara la richiesta con i dati
+  dell'articolo e la condivide con l'app Claude insieme alla foto; la
+  risposta incollata riempie titolo, descrizione, prezzo e minimo. L'app
+  non chiama Claude né altri servizi: vedi [Annunci Vinted con
+  Claude](#annunci-vinted-con-claude).
 - *Impostazioni* si apre dall'icona a ingranaggio in alto a destra, accanto
   al nome, nelle schermate Nuova spesa, Movimenti, Riepilogo e Vinted.
 - Gestione di categorie ed esercenti (rinomina, disattiva, unisci i doppioni).
@@ -383,6 +394,13 @@ già registrata*; le vendite già registrate in *Vendite* si collegano da
 *Segna come venduto → Scegli un'entrata già registrata* e passano alla
 categoria di entrata *Vinted*.
 
+Dalla 0.9.0 alla 0.10.0, al primo avvio: gli articoli già inseriti restano
+*In vendita*, con la data di messa in vendita che avevano (quella
+dell'acquisto, o il giorno in cui erano stati aggiunti); se un articolo non
+era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
+pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
+Gli articoli nuovi partono *Da pubblicare*.
+
 Consiglio: scarica un backup dall'app prima di aggiornare.
 
 ### In locale
@@ -403,7 +421,8 @@ docker compose up -d --build
   articoli Vinted) vengono create vuote e la categoria *Vinted* viene adottata
   o creata come all'aggiornamento. Un backup fatto con la 0.8.0 non si
   ripristina sulle versioni precedenti: l'app lo rifiuta con «Il backup viene
-  da una versione più recente dell'app».
+  da una versione più recente dell'app». Lo stesso vale per un backup della
+  0.10.0 (annunci e storico dei prezzi) sulle versioni precedenti.
 - **Dimensioni:** le foto sono salvate nel database, ridotte dal telefono a
   1200 pixel sul lato lungo (JPEG, al massimo 3 MB l'una) più una miniatura:
   il backup cresce con il numero di foto. Il ripristino accetta file fino a
@@ -539,17 +558,98 @@ Stessa schermata, scegliendo *Articoli Vinted*: un file con tutti gli
 articoli, senza scelta del periodo (`vinted_articoli.csv`,
 `vinted_articoli_excel.csv`), negli stessi due formati.
 
-Colonne: `articolo`, `stato` (In vendita, Venduto, Ritirato),
-`data_acquisto` e `prezzo_acquisto` (vuoti per le cose già di casa),
-`data_vendita` e `prezzo_vendita` (vuoti finché non è venduto), `guadagno`
-(vendita meno acquisto; per le cose già di casa l'intera vendita; vuoto
-finché non è venduto), `giorni_in_vendita` (fino alla vendita o a oggi;
-vuoto per gli articoli ritirati), `nota`, `inserito_da`, `creato_il` (UTC,
-ISO 8601).
+Colonne: `articolo`, `stato` (Da pubblicare, In vendita, Venduto,
+Ritirato), `data_acquisto` e `prezzo_acquisto` (vuoti per le cose già di
+casa), `data_vendita` e `prezzo_vendita` (vuoti finché non è venduto),
+`guadagno` (vendita meno acquisto; per le cose già di casa l'intera vendita;
+vuoto finché non è venduto), `giorni_in_vendita` (dalla pubblicazione su
+Vinted alla vendita o a oggi; vuoto per gli articoli ritirati e per quelli
+mai pubblicati), `nota`, `inserito_da`, `creato_il` (UTC, ISO 8601). Dalla
+0.10.0, in coda: `data_pubblicazione`, `tipo` (Abbigliamento, Borsa, Libro,
+Altro), `marca`, `taglia`, `condizioni`, `prezzo_partenza` (il prezzo
+dell'annuncio il giorno della pubblicazione), `prezzo_attuale`,
+`prezzo_minimo`, `cambi_prezzo` (quante volte il prezzo è cambiato dopo la
+pubblicazione). Le colonne precedenti non cambiano posizione.
 
 Gli importi degli articoli sono anche nei CSV di spese ed entrate, con
 categoria *Vinted*: il file degli articoli aggiunge il legame tra acquisto e
 vendita, non altri soldi.
+
+## Annunci Vinted con Claude
+
+Dalla 0.10.0 l'app aiuta a scrivere l'annuncio di un articolo con Claude,
+**a mano**: prepara la richiesta e legge la risposta, ma non chiama Claude
+né altri servizi (nessuna chiave, nessuna chiamata esterna). La
+pubblicazione su Vinted resta sempre manuale.
+
+1. **Dettagli** (facoltativi): in *Nuovo articolo* → «Aggiungi dettagli per
+   l'annuncio», oppure dalla scheda → *Annuncio* → «Modifica». Il tipo
+   (Abbigliamento, Borsa, Libro, Altro) decide i campi: marca, taglia,
+   stato, colore e materiale, misure, difetti; per i libri autore, editore e
+   anno. «Prezzi simili visti su Vinted» (es. «20, 25, 18») dà a Claude un
+   riferimento vero per il prezzo.
+2. **Scheda dell'articolo → Annuncio → «Condividi con Claude»:** si apre il
+   menu Condividi di Android con la richiesta e la foto; scegli l'app
+   Claude. In alternativa «Copia richiesta» e «Salva foto», per incollare la
+   richiesta in una chat del Progetto (sotto) e allegare la foto a mano.
+3. Claude risponde nel formato fisso (TITOLO, DESCRIZIONE, PREZZO, MINIMO,
+   VERIFICA): copia la risposta.
+4. **«Incolla risposta»:** si apre la schermata *Annuncio* con titolo,
+   descrizione, prezzo e minimo già compilati, più un avviso giallo con le
+   cose da controllare (non viene salvato). Correggi e **Salva annuncio**.
+   Se la risposta non è nel formato, tutto il testo finisce nella
+   descrizione e i prezzi restano vuoti.
+5. **Su Vinted** pubblichi a mano, con «Copia titolo» e «Copia descrizione».
+   Poi **Segna come pubblicato**: il prezzo di quel giorno diventa il prezzo
+   di partenza. Se lo abbassi, «Cambia prezzo» nella scheda: lo storico dei
+   prezzi finisce nel CSV (`prezzo_partenza`, `cambi_prezzo`). Per un
+   articolo già in vendita, la richiesta a Claude dice da quanti giorni e a
+   che prezzo, e chiede un prezzo aggiornato.
+
+Appunti, condivisione e lettura degli appunti funzionano solo in HTTPS,
+cioè dall'indirizzo Tailscale. Da `http://umbrel.local:8395` l'app mostra il
+testo da copiare a mano e una casella in cui incollare la risposta. La prima
+volta che tocchi «Incolla risposta» Chrome può chiedere il permesso di
+leggere gli appunti; se lo neghi, l'app apre la casella in cui incollare.
+
+### Il Progetto claude.ai «Annunci Vinted»
+
+Le regole di stile e di prezzo stanno meglio in un Progetto di claude.ai,
+così si cambiano senza una nuova versione dell'app: *Progetti → Nuovo
+progetto → «Annunci Vinted» → Istruzioni*, e incolla il testo qui sotto. Il
+formato della risposta deve restare **identico** a quello della richiesta
+dell'app (`app/vinted_listing.py`), altrimenti «Incolla risposta» non
+riconosce le parti.
+
+```text
+Mi aiuti a scrivere annunci per Vinted Italia. Vendo soprattutto abbigliamento e borse, a volte libri. Ti mando i dati dell'articolo e una foto.
+
+Stile
+- Italiano semplice, frasi brevi, tono onesto e cordiale. Niente superlativi vuoti né emoji in eccesso.
+- Titolo breve: tipo di articolo, marca, dettaglio principale, taglia se c'è (es. «Giacca jeans Levi's taglia M»).
+- Descrizione: 3-6 righe. Prima cosa è e com'è fatto, poi stato e difetti (sempre dichiarati), poi misure se ci sono. Per i libri: autore, titolo, editore e anno, condizioni di copertina e pagine (sottolineature, orecchie).
+- Non inventare marca, materiale, misure o difetti: usa solo i dati e ciò che si vede chiaramente nella foto. Se manca qualcosa di importante (misure, etichetta, materiale), dillo in VERIFICA.
+- Per le borse di marca non dichiarare l'autenticità se non è nei dati.
+
+Prezzo
+- Se ci sono prezzi simili visti su Vinted, partire da lì, tenendo conto di stato e marca.
+- Se non ci sono, dare una stima prudente e scrivere in VERIFICA di confrontarla con annunci simili.
+- PREZZO in euro interi, leggermente sopra il prezzo a cui mi aspetto di vendere, per lasciare margine alle offerte.
+- MINIMO: prezzo sotto cui non conviene scendere; di norma non sotto quanto l'ho pagato, salvo articoli fermi da molto tempo.
+- Se l'articolo è già in vendita da tempo, proponi un PREZZO aggiornato e spiega in VERIFICA perché.
+
+Rispondi sempre e solo in questo formato:
+TITOLO: …
+DESCRIZIONE:
+…
+PREZZO: (solo il numero, in euro)
+MINIMO: (prezzo sotto cui non scendere)
+VERIFICA: (cose da controllare prima di pubblicare, oppure «niente»)
+```
+
+Non verificato: se l'app Claude per Android, ricevendo testo e foto dal menu
+Condividi, li mette entrambi nella chat, e se la chat condivisa può aprirsi
+dentro il Progetto. Se non succede, usa «Copia richiesta» e «Salva foto».
 
 ## API
 
@@ -622,6 +722,19 @@ CDN.
   hanno `system_key` (`vinted` per quella della sezione, altrimenti `null`).
   Export: `GET /api/v1/export/vinted.csv`, con gli stessi formati di
   `/export.csv` e senza filtri di data.
+- Vinted dalla 0.10.0: stato `unlisted` (da pubblicare; anche come filtro
+  `status`) e `listed_on` facoltativo (il giorno della pubblicazione su
+  Vinted; `POST /items` senza `listed_on` crea un articolo da pubblicare,
+  `PATCH` con `listed_on: null` lo riporta lì). `POST` e `PATCH /items`
+  accettano anche i dettagli (`kind`, `brand`, `size`, `condition`,
+  `color_material`, `measurements`, `book_author`, `book_publisher_year`,
+  `defects`, `similar_prices`) e l'annuncio (`listing_title`,
+  `listing_description`, `price`, `min_price` come testo, «22,50»); ogni
+  articolo restituisce `details` e `listing`, con `price_changes` (il prezzo
+  il giorno della pubblicazione, poi ogni cambio). `GET /listing/options`
+  (tipi con i loro campi, stati con le parole di Vinted), `GET
+  /items/{id}/listing-request` (il testo da mandare a Claude) e `POST
+  /listing/parse` (legge la risposta incollata, senza salvare nulla).
 
 ## Sviluppo
 
@@ -648,6 +761,7 @@ app/
   security.py      password (scrypt), sessioni, autenticazione
   money.py         conversione degli importi in centesimi
   text.py          ricerca: testo senza maiuscole e accenti
+  vinted_listing.py  annunci Vinted: richiesta per Claude e lettura della risposta
   dates.py         intervalli di date
   schemas.py       modelli JSON dell'API
   migrations/      schema del database (file SQL numerati)

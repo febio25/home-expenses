@@ -70,6 +70,12 @@ export const api = {
     return { expense: await response.json(), created: response.status === 201 };
   },
 
+  // Fetch a file as a Blob (0.10.0: the photo of a Vinted item, to share it).
+  async blob(path) {
+    const response = await request('GET', path, { timeout: 60000 });
+    return response.blob();
+  },
+
   // Fetch a file (CSV, backup) and hand it to the browser as a download.
   async download(path, fallbackName) {
     const response = await request('GET', path, { timeout: 60000 });

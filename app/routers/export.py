@@ -21,7 +21,7 @@ from ..money import format_cents
 from ..security import current_user
 from .expenses import EXPENSE_SELECT
 from .incomes import INCOME_SELECT, income_out
-from .vinted import ITEM_SELECT, item_out
+from .vinted import ITEM_SELECT, items_out
 
 router = APIRouter(tags=["export"], dependencies=[Depends(current_user)])
 
@@ -58,8 +58,22 @@ VINTED_CSV_COLUMNS = [
     "nota",
     "inserito_da",
     "creato_il",
+    "data_pubblicazione",  # 0.10.0: new columns go at the end, the others never move
+    "tipo",
+    "marca",
+    "taglia",
+    "condizioni",
+    "prezzo_partenza",
+    "prezzo_attuale",
+    "prezzo_minimo",
+    "cambi_prezzo",
 ]
-VINTED_STATUS_LABELS = {"listed": "In vendita", "sold": "Venduto", "withdrawn": "Ritirato"}
+VINTED_STATUS_LABELS = {
+    "unlisted": "Da pubblicare",
+    "listed": "In vendita",
+    "sold": "Venduto",
+    "withdrawn": "Ritirato",
+}
 PAYMENT_LABELS = {"card": "Carta", "cash": "Contanti", "other": "Altro"}
 
 Flavour = Literal["standard", "excel_it"]
@@ -128,8 +142,12 @@ def build_vinted_csv(items: list[dict], flavour: str, today: date) -> str:
     """Render Vinted items (as returned by ``item_out``) as CSV text.
 
     guadagno: sale minus purchase, the whole price for things already at
-    home, empty until sold. giorni_in_vendita: from the day it went on sale
-    to the sale (or to today); empty for a withdrawn item.
+    home, empty until sold. giorni_in_vendita: from the day it was
+    published on Vinted to the sale (or to today); empty for a withdrawn
+    item and for one never published. data_pubblicazione: that day.
+    prezzo_partenza: the asking price on the day it was published;
+    prezzo_attuale and prezzo_minimo: as now; cambi_prezzo: how many times
+    the price changed after that (empty if never published).
     """
     excel = flavour == "excel_it"
 
@@ -139,8 +157,9 @@ def build_vinted_csv(items: list[dict], flavour: str, today: date) -> str:
     records = []
     for item in items:
         purchase, sale = item["purchase"], item["sale"]
+        details, listing = item["details"], item["listing"]
         days = ""
-        if item["status"] != "withdrawn":
+        if item["status"] != "withdrawn" and item["listed_on"] is not None:
             end = date.fromisoformat(sale["income_date"]) if sale else today
             days = str(max(0, (end - date.fromisoformat(item["listed_on"])).days))
         records.append([
@@ -155,6 +174,15 @@ def build_vinted_csv(items: list[dict], flavour: str, today: date) -> str:
             item["note"] or "",
             item["created_by_name"],
             item["created_at"],
+            str(item["listed_on"]) if item["listed_on"] is not None else "",
+            details["kind_name"] or "",
+            details["brand"] or "",
+            details["size"] or "",
+            details["condition_name"] or "",
+            money(listing["start_price_cents"]),
+            money(listing["price_cents"]),
+            money(listing["min_price_cents"]),
+            str(max(0, len(listing["price_changes"]) - 1)) if item["listed_on"] is not None else "",
         ])
     return _render(VINTED_CSV_COLUMNS, records, excel)
 
@@ -247,10 +275,12 @@ def export_vinted_csv(
 ):
     """Download every Vinted item, oldest first: purchase, sale, gain and
     days on sale. No date filter: the items are few and live for months."""
-    rows = db.execute(f"{ITEM_SELECT} ORDER BY v.listed_on, v.id").fetchall()
+    rows = db.execute(
+        f"{ITEM_SELECT} ORDER BY COALESCE(v.listed_on, e.expense_date, substr(v.created_at, 1, 10)), v.id"
+    ).fetchall()
     excel = flavour == "excel_it"
     return _csv_response(
-        build_vinted_csv([item_out(row) for row in rows], flavour, dates.today()),
+        build_vinted_csv(items_out(db, rows), flavour, dates.today()),
         excel,
         f"vinted_articoli{'_excel' if excel else ''}.csv",
     )

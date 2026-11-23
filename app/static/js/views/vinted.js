@@ -5,6 +5,11 @@
 //
 // Each row starts with the photo, as in Vinted's own lists: a tap on the
 // photo opens it full size, a tap on the rest opens the item.
+//
+// 0.10.0: four filters drawn as icons with a count (as text they did not fit
+// a 360 px phone): not on Vinted yet (where the tab opens), on sale, sold,
+// all. The heading under them always says in words what is shown. A search
+// looks through every item, whatever the filter.
 
 import { api } from '../api.js';
 import { state } from '../store.js';
@@ -14,10 +19,18 @@ import {
 import { thumbButton, thumbPlaceholder } from '../photo.js';
 
 const FILTERS = [
-  { id: 'listed', query: null, label: 'In vendita' },
-  { id: 'sold', query: 'venduti', label: 'Venduti' },
-  { id: 'all', query: 'tutti', label: 'Tutti' },
+  { id: 'unlisted', query: null, label: 'Da pubblicare', icon: 'cloud-upload' },
+  { id: 'listed', query: 'in-vendita', label: 'In vendita', icon: 'store' },
+  { id: 'sold', query: 'venduti', label: 'Venduti', icon: 'coin-euro' },
+  { id: 'all', query: 'tutti', label: 'Tutti', icon: 'stack' },
 ];
+
+// The filter to show the next time the list opens, once: after "Nuovo
+// articolo" the list opens where the new item is.
+let nextFilter = null;
+export function showFilterNext(status) {
+  nextFilter = FILTERS.some((item) => item.id === status) ? status : null;
+}
 
 export function itemPath(id) {
   return `/vinted/articolo/${id}`;
@@ -49,7 +62,16 @@ export function daysBetween(fromIso, toIso = todayIso()) {
   return Math.max(0, Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000));
 }
 
-// "da oggi", "da ieri", "da 12 giorni": how long an item has been listed.
+// The day an item not on Vinted yet started waiting: its purchase, or the
+// day it was added (created_at is UTC: read it as a local day).
+export function waitingSince(item) {
+  if (item.purchase) return item.purchase.expense_date;
+  const added = new Date(item.created_at);
+  const pad = (number) => String(number).padStart(2, '0');
+  return `${added.getFullYear()}-${pad(added.getMonth() + 1)}-${pad(added.getDate())}`;
+}
+
+// "da oggi", "da ieri", "da 12 giorni": how long an item has been waiting.
 export function sinceLabel(days) {
   if (days === 0) return 'da oggi';
   if (days === 1) return 'da ieri';
@@ -86,10 +108,15 @@ export function itemLines(item) {
   }
   return [
     h('span', { class: 'art-price' }, item.purchase ? `Pagato ${formatEuro(item.purchase.amount_cents)}` : 'Già nostro'),
-    h('span', { class: 'art-meta' }, item.status === 'withdrawn'
-      ? 'Ritirato dalla vendita'
-      : `In vendita ${sinceLabel(daysBetween(item.listed_on))}`),
+    h('span', { class: 'art-meta' }, waitingText(item)),
   ];
+}
+
+// Status of an item not sold: where it is and since when.
+function waitingText(item) {
+  if (item.status === 'withdrawn') return 'Ritirato dalla vendita';
+  if (item.status === 'unlisted') return `Da pubblicare ${sinceLabel(daysBetween(waitingSince(item)))}`;
+  return `In vendita ${sinceLabel(daysBetween(item.listed_on))}`;
 }
 
 export function itemRow(item) {
@@ -104,27 +131,50 @@ export function itemRow(item) {
 export function captionOf(item) {
   if (item.status === 'sold') return `Venduto a ${formatEuro(item.sale.amount_cents)} · ${dayMonth(item.sale.income_date)}`;
   const price = item.purchase ? `Pagato ${formatEuro(item.purchase.amount_cents)}` : 'Già nostro';
-  return item.status === 'withdrawn'
-    ? `${price} · ritirato dalla vendita`
-    : `${price} · in vendita ${sinceLabel(daysBetween(item.listed_on))}`;
+  return `${price} · ${waitingText(item).toLocaleLowerCase('it-IT')}`;
 }
 
 function normalize(text) {
   return text.trim().replace(/\s+/g, ' ').toLocaleLowerCase('it-IT');
 }
 
+// The heading of a list: what it is, in words, with a figure on the right
+// and a line under it.
+function listHead(title, figure, note) {
+  return h('div', { class: 'list-head' },
+    h('p', { class: 'day-head' }, h('span', {}, title), figure ? h('span', { class: 'day-total' }, figure) : null),
+    note ? h('span', { class: 'list-head-note' }, note) : null);
+}
+
+function paidOf(items) {
+  return items.reduce((total, item) => total + (item.purchase ? item.purchase.amount_cents : 0), 0);
+}
+
+// "Da pubblicare": how many, what they cost, how long the oldest has waited.
+function unlistedHead(items) {
+  const oldest = items.reduce((first, item) => {
+    const since = waitingSince(item);
+    return since < first ? since : first;
+  }, todayIso());
+  const waited = sinceLabel(daysBetween(oldest));
+  return listHead(
+    items.length === 1 ? '1 da pubblicare' : `${items.length} da pubblicare`,
+    `${formatEuro(paidOf(items))} pagati`,
+    items.length === 1 ? `Aspetta ${waited}` : `Il più vecchio aspetta ${waited}`);
+}
+
 // "In vendita": how many, what they cost, how long the oldest has waited.
 function listedHead(items) {
-  const paid = items.reduce((total, item) => total + (item.purchase ? item.purchase.amount_cents : 0), 0);
   const oldest = items.reduce((first, item) => (item.listed_on < first ? item.listed_on : first), todayIso());
-  return h('div', { class: 'list-head' },
-    h('p', { class: 'day-head' },
-      h('span', {}, items.length === 1 ? '1 articolo in vendita' : `${items.length} articoli in vendita`),
-      h('span', { class: 'day-total' }, `${formatEuro(paid)} pagati`)),
-    h('span', { class: 'list-head-note' }, items.length === 1
+  return listHead(
+    items.length === 1 ? '1 articolo in vendita' : `${items.length} articoli in vendita`,
+    `${formatEuro(paidOf(items))} pagati`,
+    items.length === 1
       ? `In vendita ${sinceLabel(daysBetween(oldest))}`
-      : `Il più vecchio è in vendita ${sinceLabel(daysBetween(oldest))}`));
+      : `Il più vecchio è in vendita ${sinceLabel(daysBetween(oldest))}`);
 }
+
+const countLabel = (count) => (count === 1 ? '1 articolo' : `${count} articoli`);
 
 // "Venduti": by month of sale, newest first, with the gain of the month.
 function soldGroups(items) {
@@ -150,6 +200,12 @@ function soldGroups(items) {
 
 export async function mount(root, ctx) {
   let filter = (FILTERS.find((item) => item.query === ctx.query.get('filtro')) || FILTERS[0]).id;
+  if (nextFilter) {
+    filter = nextFilter;
+    nextFilter = null;
+    const query = FILTERS.find((item) => item.id === filter).query;
+    history.replaceState(history.state, '', query ? `/vinted?filtro=${query}` : '/vinted');
+  }
   let search = '';
   let items = [];
   const searchInput = h('input', {
@@ -161,7 +217,7 @@ export async function mount(root, ctx) {
     },
   });
   searchInput.setAttribute('autocorrect', 'off');
-  const pills = h('div', { class: 'pills', role: 'group', 'aria-label': 'Quali articoli' });
+  const pills = h('div', { class: 'pills pills-icons', role: 'group', 'aria-label': 'Quali articoli' });
   const body = h('div');
   root.append(
     ...vintedHead('items', ctx.navigate),
@@ -201,28 +257,62 @@ export async function mount(root, ctx) {
 
   function draw() {
     const count = (status) => items.filter((item) => item.status === status).length;
-    pills.replaceChildren(...FILTERS.map((item) => h('button', {
-      class: `pill${item.id === filter ? ' is-selected' : ''}`,
-      type: 'button',
-      'aria-pressed': String(item.id === filter),
-      onclick: () => setFilter(item.id),
-    }, item.label, item.id === 'all' ? null : h('span', { class: 'pill-count' }, String(count(item.id))))));
+    pills.replaceChildren(...FILTERS.map((item) => {
+      const number = item.id === 'all' ? null : count(item.id);
+      return h('button', {
+        class: `pill${item.id === filter ? ' is-selected' : ''}`,
+        type: 'button',
+        title: item.label,
+        'aria-label': number === null ? item.label : `${item.label}: ${number}`,
+        'aria-pressed': String(item.id === filter),
+        onclick: () => setFilter(item.id),
+      }, icon(item.icon), number === null ? null : h('span', { class: 'pill-count' }, String(number)));
+    }));
 
     if (!items.length) {
       body.replaceChildren(emptyAll());
       return;
     }
-    const visible = items.filter((item) => (filter === 'all' || item.status === filter)
-      && (!search || normalize(item.title).includes(search)));
-    if (!visible.length) {
-      const title = search ? 'Nessun articolo trovato'
-        : filter === 'sold' ? 'Ancora nessun articolo venduto' : 'Nessun articolo in vendita';
-      body.replaceChildren(h('div', { class: 'empty' }, h('p', { class: 'empty-title' }, title)));
+    // A search looks everywhere: a sold or withdrawn item is found too.
+    if (search) {
+      const found = items.filter((item) => normalize(item.title).includes(search));
+      body.replaceChildren(found.length
+        ? h('div', {},
+          listHead(found.length === 1 ? '1 articolo trovato' : `${found.length} articoli trovati`, null,
+            'In tutti gli articoli, venduti e ritirati compresi'),
+          h('div', { class: 'card rows' }, found.map(itemRow)))
+        : h('div', { class: 'empty' },
+          h('p', { class: 'empty-title' }, 'Nessun articolo trovato'),
+          h('p', { class: 'empty-text' }, 'La ricerca guarda il titolo di tutti gli articoli.')));
       return;
     }
-    if (filter === 'listed') body.replaceChildren(listedHead(visible), h('div', { class: 'card rows' }, visible.map(itemRow)));
+    const visible = filter === 'all' ? items : items.filter((item) => item.status === filter);
+    if (!visible.length) {
+      body.replaceChildren(emptyFilter());
+      return;
+    }
+    if (filter === 'unlisted') body.replaceChildren(unlistedHead(visible), h('div', { class: 'card rows' }, visible.map(itemRow)));
+    else if (filter === 'listed') body.replaceChildren(listedHead(visible), h('div', { class: 'card rows' }, visible.map(itemRow)));
     else if (filter === 'sold') body.replaceChildren(...soldGroups(visible));
-    else body.replaceChildren(h('div', { class: 'card rows list-card' }, visible.map(itemRow)));
+    else {
+      body.replaceChildren(
+        listHead('Tutti gli articoli', countLabel(visible.length), null),
+        h('div', { class: 'card rows' }, visible.map(itemRow)));
+    }
+  }
+
+  // An empty filter, with the items still elsewhere: say what goes here.
+  function emptyFilter() {
+    const [title, text] = {
+      unlisted: ['Niente da pubblicare',
+        'Gli articoli nuovi arrivano qui finché non li segni come pubblicati su Vinted.'],
+      listed: ['Nessun articolo in vendita',
+        'Quando pubblichi un articolo su Vinted, segnalo nella sua scheda: comparirà qui.'],
+      sold: ['Ancora nessun articolo venduto', null],
+    }[filter];
+    return h('div', { class: 'empty' },
+      h('p', { class: 'empty-title' }, title),
+      text ? h('p', { class: 'empty-text' }, text) : null);
   }
 
   async function load({ quiet = false } = {}) {

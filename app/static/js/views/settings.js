@@ -225,7 +225,7 @@ function exportSection() {
       {
         value: 'vinted',
         label: 'Articoli Vinted',
-        hint: 'Tutti gli articoli: acquisto, vendita, guadagno, giorni in vendita.',
+        hint: 'Tutti gli articoli: acquisto, vendita, guadagno, giorni in vendita, prezzi dell’annuncio.',
       },
     ], (value) => {
       what = value;

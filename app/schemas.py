@@ -394,7 +394,9 @@ class IncomeSummaryOut(BaseModel):
 # An item bought to resell, or sold from home. Its money lives in an expense
 # (category Vinted) and an income (category "vinted"): the item points at them.
 
-VintedStatus = Literal["listed", "sold", "withdrawn"]
+# unlisted (0.10.0): not on Vinted yet ("Da pubblicare"); listed: published
+# there and waiting for a buyer; sold; withdrawn: kept or given away.
+VintedStatus = Literal["unlisted", "listed", "sold", "withdrawn"]
 
 
 class VintedPurchaseIn(BaseModel):
@@ -410,11 +412,90 @@ class VintedPurchaseIn(BaseModel):
     payment_method: PaymentMethod = "card"
 
 
-class VintedItemCreate(BaseModel):
+# 0.10.0, listings written with Claude: what an item is (decides the details
+# asked for it), its condition with the words of the Vinted app in Italy, and
+# the details of each kind, in the order of the request sent to Claude.
+VINTED_KINDS = {"clothing": "Abbigliamento", "bag": "Borsa", "book": "Libro", "other": "Altro"}
+VINTED_CONDITIONS = {
+    "new_with_tags": "Nuovo con cartellino",
+    "new_without_tags": "Nuovo senza cartellino",
+    "very_good": "Ottime condizioni",
+    "good": "Buone condizioni",
+    "satisfactory": "Discrete condizioni",
+}
+VINTED_KIND_FIELDS = {
+    "clothing": ["brand", "size", "condition", "color_material", "measurements", "defects"],
+    "bag": ["brand", "condition", "color_material", "measurements", "defects"],
+    "book": ["book_author", "book_publisher_year", "condition", "defects"],
+    "other": ["brand", "condition", "color_material", "measurements", "defects"],
+}
+# Without a kind: everything but the book fields.
+VINTED_ANY_KIND_FIELDS = VINTED_KIND_FIELDS["clothing"]
+VINTED_DETAIL_LABELS = {
+    "brand": "Marca",
+    "size": "Taglia",
+    "condition": "Stato",
+    "color_material": "Colore e materiale",
+    "measurements": "Misure",
+    "book_author": "Autore",
+    "book_publisher_year": "Editore e anno",
+    "defects": "Difetti",
+}
+# Longest text accepted for each field (and for the listing).
+VINTED_TEXT_LIMITS = {
+    "brand": 60,
+    "size": 30,
+    "color_material": 80,
+    "measurements": 120,
+    "book_author": 100,
+    "book_publisher_year": 80,
+    "defects": 300,
+    "similar_prices": 120,
+    "listing_title": 200,
+    "listing_description": 5000,
+}
+
+VintedKind = Literal["clothing", "bag", "book", "other"]
+VintedCondition = Literal["new_with_tags", "new_without_tags", "very_good", "good", "satisfactory"]
+
+
+class VintedListingIn(BaseModel):
+    """The details of an item and its listing, all optional. In a PATCH,
+    a field sent as null is cleared; a field not sent is left alone."""
+
+    kind: VintedKind | None = None
+    brand: str | None = Field(default=None, max_length=VINTED_TEXT_LIMITS["brand"])
+    size: str | None = Field(default=None, max_length=VINTED_TEXT_LIMITS["size"])
+    condition: VintedCondition | None = None
+    color_material: str | None = Field(default=None, max_length=VINTED_TEXT_LIMITS["color_material"])
+    measurements: str | None = Field(default=None, max_length=VINTED_TEXT_LIMITS["measurements"])
+    book_author: str | None = Field(default=None, max_length=VINTED_TEXT_LIMITS["book_author"])
+    book_publisher_year: str | None = Field(
+        default=None, max_length=VINTED_TEXT_LIMITS["book_publisher_year"]
+    )
+    defects: str | None = Field(default=None, max_length=VINTED_TEXT_LIMITS["defects"])
+    similar_prices: str | None = Field(
+        default=None, max_length=VINTED_TEXT_LIMITS["similar_prices"],
+        description="Prices seen on Vinted for similar items, as typed (\"20, 25, 18\")",
+    )
+    listing_title: str | None = Field(default=None, max_length=VINTED_TEXT_LIMITS["listing_title"])
+    listing_description: str | None = Field(
+        default=None, max_length=VINTED_TEXT_LIMITS["listing_description"]
+    )
+    price: str | None = Field(
+        default=None, max_length=20,
+        description="Asking price on Vinted, as typed (\"25\", \"22,50\"). On an item on sale, a"
+        " new price goes into its price history",
+    )
+    min_price: str | None = Field(default=None, max_length=20, description="Not below this")
+
+
+class VintedItemCreate(VintedListingIn):
     title: str = Field(min_length=1, max_length=120)
     note: str | None = Field(default=None, max_length=300)
     listed_on: date | None = Field(
-        default=None, description="On sale since: defaults to the purchase date, else today"
+        default=None,
+        description="Day it was published on Vinted; missing or null: not on Vinted yet",
     )
     purchase: VintedPurchaseIn | None = Field(default=None, description="None for things already at home")
     client_uuid: str | None = Field(
@@ -425,11 +506,17 @@ class VintedItemCreate(BaseModel):
     )
 
 
-class VintedItemUpdate(BaseModel):
-    """Partial update. ``"note": null`` clears the note."""
+class VintedItemUpdate(VintedListingIn):
+    """Partial update. ``"note": null`` clears the note; ``"listed_on": null``
+    puts the item back among the ones not on Vinted yet."""
 
     title: str | None = Field(default=None, min_length=1, max_length=120)
     note: str | None = Field(default=None, max_length=300)
+    listed_on: date | None = Field(
+        default=None,
+        description="Day it was published on Vinted: not in the future, not before the"
+        " purchase, not after the sale",
+    )
     is_withdrawn: bool | None = Field(default=None, description="Kept or given away: no longer for sale")
 
 
@@ -471,18 +558,92 @@ class VintedSaleOut(BaseModel):
     received_by_name: str
 
 
+class VintedDetailsOut(BaseModel):
+    kind: VintedKind | None
+    kind_name: str | None
+    brand: str | None
+    size: str | None
+    condition: VintedCondition | None
+    condition_name: str | None
+    color_material: str | None
+    measurements: str | None
+    book_author: str | None
+    book_publisher_year: str | None
+    defects: str | None
+    similar_prices: str | None
+
+
+class VintedPriceChangeOut(BaseModel):
+    price_cents: int
+    changed_on: date
+
+
+class VintedListingOut(BaseModel):
+    title: str | None
+    description: str | None
+    price_cents: int | None = Field(description="Asking price now")
+    min_price_cents: int | None
+    start_price_cents: int | None = Field(description="Price on the day it was published")
+    price_changes: list[VintedPriceChangeOut] = Field(
+        description="Price on Vinted over time, oldest first: the first is the day it was published"
+    )
+
+
+class VintedListingRequestOut(BaseModel):
+    text: str = Field(description="The message for Claude: the item's data, rules and answer format")
+    has_photo: bool
+
+
+class VintedListingParseIn(BaseModel):
+    text: str = Field(max_length=20000, description="Claude's answer, pasted")
+
+
+class VintedListingParseOut(BaseModel):
+    """What the app recognised in Claude's answer. Nothing is saved: the
+    client shows it in the form, and saves with PATCH /vinted/items/{id}."""
+
+    recognized: bool = Field(description="False: no TITOLO or DESCRIZIONE, the whole text is the description")
+    title: str | None
+    description: str | None
+    price_cents: int | None
+    min_price_cents: int | None
+    check: str | None = Field(description="VERIFICA: what to check before publishing, shown once")
+
+
+class VintedOptionOut(BaseModel):
+    code: str
+    name: str
+
+
+class VintedKindOut(VintedOptionOut):
+    fields: list[str]
+
+
+class VintedDetailFieldOut(BaseModel):
+    field: str
+    name: str
+
+
+class VintedListingOptionsOut(BaseModel):
+    kinds: list[VintedKindOut]
+    conditions: list[VintedOptionOut]
+    fields: list[VintedDetailFieldOut] = Field(description="Names of the detail fields")
+
+
 class VintedItemOut(BaseModel):
     id: int
     title: str
     note: str | None
     status: VintedStatus
-    listed_on: date
+    listed_on: date | None = Field(description="Day it was published on Vinted; null: not yet")
     photo: str | None = Field(description="Version token of the photo, null without one")
     purchase: VintedPurchaseOut | None
     sale: VintedSaleOut | None
     gain_cents: int | None = Field(
         description="Sale minus purchase (an item without purchase costs zero); null until sold"
     )
+    details: VintedDetailsOut
+    listing: VintedListingOut
     created_by_name: str
     created_at: str
     updated_at: str

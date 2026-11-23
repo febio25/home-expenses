@@ -1,6 +1,7 @@
 """Vinted section (0.8.0): items, purchases and sales linked to expenses and
 incomes, photos, summary, CSV, and the update of a database that already had
-a "Vinted" category created by hand."""
+a "Vinted" category created by hand. From 0.10.0 an item can wait before it
+goes on Vinted (status "unlisted", see test_vinted_unlisted.py)."""
 
 from __future__ import annotations
 
@@ -17,7 +18,9 @@ from tests.conftest import PINNED_TODAY, make_expense, strip_vinted_schema
 API = "/api/v1"
 VINTED_CSV_HEADER = [
     "articolo", "stato", "data_acquisto", "prezzo_acquisto", "data_vendita", "prezzo_vendita",
-    "guadagno", "giorni_in_vendita", "nota", "inserito_da", "creato_il",
+    "guadagno", "giorni_in_vendita", "nota", "inserito_da", "creato_il", "data_pubblicazione",
+    "tipo", "marca", "taglia", "condizioni", "prezzo_partenza", "prezzo_attuale", "prezzo_minimo",
+    "cambi_prezzo",
 ]
 # The server only checks the JPEG signature: no image library needed here.
 JPEG = b"\xff\xd8\xff\xe0" + bytes(range(256)) * 4
@@ -148,8 +151,8 @@ def test_item_bought_to_resell(client, categories):
     item = make_item(client, title="  Borsa   a tracolla ", note=" pelle ", purchase=bought())
     assert item["title"] == "Borsa a tracolla"
     assert item["note"] == "pelle"
-    assert item["status"] == "listed"
-    assert item["listed_on"] == "2026-11-02"  # on sale since the purchase
+    assert item["status"] == "unlisted"  # bought, not on Vinted yet
+    assert item["listed_on"] is None
     assert item["photo"] is None and item["sale"] is None and item["gain_cents"] is None
     purchase = item["purchase"]
     assert purchase["amount_cents"] == 1200
@@ -188,6 +191,8 @@ def test_purchase_details_and_validation(client):
     assert post(purchase=bought("abc")).status_code == 422
     assert post(purchase=bought(day="2027-08-01")).status_code == 422  # future
     assert post(listed_on="2027-08-01").status_code == 422
+    early = post(listed_on="2026-11-01", purchase=bought(day="2026-11-02"))
+    assert early.json()["detail"] == "La data di pubblicazione non può essere prima dell'acquisto."
     assert post(purchase=bought(paid_by_user_id=999)).status_code == 422
     # Nothing half-saved by the refused requests.
     assert len(client.get(f"{API}/vinted/items").json()) == 2
@@ -197,9 +202,11 @@ def test_purchase_details_and_validation(client):
 def test_item_already_at_home(client):
     item = make_item(client, title="Giacca blazer bambini")
     assert item["purchase"] is None
-    assert item["listed_on"] == PINNED_TODAY.isoformat()
+    assert (item["status"], item["listed_on"]) == ("unlisted", None)
     dated = make_item(client, title="Zaino", listed_on="2026-10-14")
-    assert dated["listed_on"] == "2026-10-14"
+    assert (dated["status"], dated["listed_on"]) == ("listed", "2026-10-14")
+    today = make_item(client, title="Felpa", listed_on=PINNED_TODAY.isoformat())
+    assert today["listed_on"] == PINNED_TODAY.isoformat()
     assert client.get(f"{API}/expenses").json() == []
 
 
@@ -213,7 +220,7 @@ def test_link_a_purchase_recorded_from_new_expense(client, categories):
     item = make_item(client, title="Cappotto", purchase={"expense_id": expense["id"]})
     assert item["purchase"]["expense_id"] == expense["id"]
     assert item["purchase"]["amount_cents"] == 1400
-    assert item["listed_on"] == "2026-10-30"
+    assert item["listed_on"] is None
     assert len(client.get(f"{API}/expenses").json()) == 2  # linked, not copied
 
     again = client.post(f"{API}/vinted/items", json={"title": "Altro", "purchase": {"expense_id": expense["id"]}})
@@ -323,7 +330,7 @@ def test_link_a_sale_recorded_from_new_income(client):
 
 
 def test_cancel_sale_withdraw_and_edit(client):
-    item = make_item(client, purchase=bought())
+    item = make_item(client, purchase=bought(), listed_on="2026-11-04")
     sold = sell(client, item["id"])
     assert client.patch(f"{API}/vinted/items/{item['id']}", json={"is_withdrawn": True}).status_code == 409
 
@@ -348,7 +355,7 @@ def test_cancel_sale_withdraw_and_edit(client):
 
 
 def test_status_filter_and_order(client):
-    a = make_item(client, title="A", purchase=bought(day="2026-10-01"))
+    a = make_item(client, title="A", purchase=bought(day="2026-10-01"), listed_on="2026-10-01")
     b = make_item(client, title="B", listed_on="2026-11-05")
     c = make_item(client, title="C", listed_on="2026-09-01")
     sell(client, c["id"], day="2026-11-20")
@@ -392,7 +399,8 @@ def test_deleting_the_expense_or_the_income_keeps_the_item(client):
     assert without_purchase["gain_cents"] == 2500
 
     assert client.delete(f"{API}/incomes/{item['sale']['income_id']}").status_code == 204
-    assert client.get(f"{API}/vinted/items/{item['id']}").json()["status"] == "listed"
+    # Never published: back among the items not on Vinted yet.
+    assert client.get(f"{API}/vinted/items/{item['id']}").json()["status"] == "unlisted"
 
 
 def test_deleting_the_item_deletes_its_money_and_photo(client, categories):
@@ -517,11 +525,12 @@ def test_trend_of_the_section(client, categories):
 
 def test_vinted_csv(client, categories):
     sold = sell(client, make_item(client, title="Borsa, marrone", purchase=bought("12", "2026-11-02"),
-                                  note="tracolla")["id"], "25", "2026-11-18")
+                                  note="tracolla", listed_on="2026-11-02")["id"], "25", "2026-11-18")
     own = sell(client, make_item(client, title="Giacca", listed_on="2026-11-01")["id"], "15", "2026-11-20")
-    listed = make_item(client, title="Tuta", purchase=bought("18,50", "2026-11-12"))
+    listed = make_item(client, title="Tuta", purchase=bought("18,50", "2026-11-12"), listed_on="2026-11-12")
     withdrawn = make_item(client, title="Stivali", listed_on="2026-10-08")
     client.patch(f"{API}/vinted/items/{withdrawn['id']}", json={"is_withdrawn": True})
+    waiting = make_item(client, title="Gonna", purchase=bought("6", "2026-11-15"))
 
     response = client.get(f"{API}/export/vinted.csv")
     assert response.status_code == 200
@@ -529,14 +538,19 @@ def test_vinted_csv(client, categories):
     rows = list(csv.reader(io.StringIO(response.content.decode("utf-8"))))
     assert rows[0] == VINTED_CSV_HEADER
     by_title = {row[0]: row for row in rows[1:]}
-    assert [row[0] for row in rows[1:]] == ["Stivali", "Giacca", "Borsa, marrone", "Tuta"]  # oldest first
+    # Oldest first: by publication, else by purchase.
+    assert [row[0] for row in rows[1:]] == ["Stivali", "Giacca", "Borsa, marrone", "Tuta", "Gonna"]
     assert by_title["Borsa, marrone"][1:10] == [
         "Venduto", "2026-11-02", "12.00", "2026-11-18", "25.00", "13.00", "16", "tracolla", "Fabio"]
     assert by_title["Giacca"][1:8] == ["Venduto", "", "", "2026-11-20", "15.00", "15.00", "19"]
     days = (PINNED_TODAY - date(2026, 11, 12)).days
     assert by_title["Tuta"][1:8] == ["In vendita", "2026-11-12", "18.50", "", "", "", str(days)]
     assert by_title["Stivali"][1:8] == ["Ritirato", "", "", "", "", "", ""]
-    assert sold["id"] and own["id"] and listed["id"]
+    assert by_title["Gonna"][1:8] == ["Da pubblicare", "2026-11-15", "6.00", "", "", "", ""]
+    assert {title: row[11] for title, row in by_title.items()} == {
+        "Stivali": "2026-10-08", "Giacca": "2026-11-01", "Borsa, marrone": "2026-11-02",
+        "Tuta": "2026-11-12", "Gonna": ""}
+    assert sold["id"] and own["id"] and listed["id"] and waiting["id"]
 
     excel = client.get(f"{API}/export/vinted.csv?format=excel_it")
     assert 'filename="vinted_articoli_excel.csv"' in excel.headers["content-disposition"]

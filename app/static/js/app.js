@@ -23,6 +23,7 @@ import * as vintedSummaryView from './views/vinted-summary.js';
 import * as vintedNewView from './views/vinted-new.js';
 import * as vintedItemView from './views/vinted-item.js';
 import * as vintedSellView from './views/vinted-sell.js';
+import * as vintedListingView from './views/vinted-listing-edit.js';
 import { mountFor as exploreFor } from './views/explore.js';
 
 const ROUTES = [
@@ -41,6 +42,7 @@ const ROUTES = [
   { pattern: /^\/vinted\/nuovo$/, view: vintedNewView, tab: 'vinted' },
   { pattern: /^\/vinted\/articolo\/(\d+)$/, view: vintedItemView, tab: 'vinted' },
   { pattern: /^\/vinted\/articolo\/(\d+)\/venduto$/, view: vintedSellView, tab: 'vinted' },
+  { pattern: /^\/vinted\/articolo\/(\d+)\/annuncio$/, view: vintedListingView, tab: 'vinted' },
   // Settings open from the icon at the top of the main screens (0.8.0): the
   // bottom bar stays, with no tab lit.
   { pattern: /^\/impostazioni$/, view: settingsView, tab: 'none' },

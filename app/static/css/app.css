@@ -523,7 +523,6 @@ a.bar:active { background: var(--primary-soft); }
 .list-head { margin: 18px 4px 8px; }
 .list-head > .day-head { margin: 0; gap: 12px; }
 .list-head-note { display: block; color: var(--muted); font-size: 0.8125rem; margin-top: 2px; }
-.list-card { margin-top: 14px; }
 
 /* An item row starts with its photo, as in Vinted's own lists: the photo
    opens full size, the rest of the row opens the item. */
@@ -710,3 +709,26 @@ dialog.viewer::backdrop { background: rgb(20 37 31 / 0.6); }
 @media (prefers-reduced-motion: reduce) {
   .btn-save.is-saved { animation: none; }
 }
+
+/* 0.10.0: Vinted filters as icons with their count, items not on Vinted yet */
+.pills-icons .pill { flex: 1; justify-content: center; }
+.pills-icons .pill .icon svg { width: 20px; height: 20px; }
+.status.is-unlisted { background: #FFF3BF; color: #5C4700; }
+.btn-text-start { display: block; padding-left: 0; margin-top: 4px; }
+.seg-wrap { grid-auto-flow: row; grid-template-columns: 1fr 1fr; row-gap: 3px; }
+.textarea { min-height: 150px; resize: vertical; line-height: 1.45; }
+.price-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.listing-desc {
+  margin-top: 4px; font-size: 0.875rem; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere;
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+}
+.listing-links { display: flex; flex-wrap: wrap; column-gap: 4px; }
+.info-split.listing-links { padding-top: 2px; padding-bottom: 2px; }
+.info-stack { flex-direction: column; align-items: stretch; gap: 4px; }
+.info-stack .btn-claude { margin-top: 0; }
+.info-stack .listing-links { margin-left: -8px; }
+.banner-check { background: #FFF3BF; color: #5C4700; border: 1.5px solid #F2D675; margin-top: 12px; }
+.banner-check p { margin: 0; }
+.banner-check p + p { margin-top: 6px; }
+.form-hint-top { margin: 4px 4px 0; font-weight: 650; color: var(--ink); }
+.details-toggle { margin-top: 14px; }

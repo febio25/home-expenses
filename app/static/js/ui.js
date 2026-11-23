@@ -40,6 +40,14 @@ const ICONS = {
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   expand: '<path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/>',
+  // 0.10.0, the filters of the Vinted list: not on Vinted yet, on sale,
+  // sold, all. From Tabler Icons 3.52.0 (cloud-upload, building-store,
+  // coin-euro, stack-2), MIT License, Copyright (c) 2020-2026 Pawel Kuna:
+  // see THIRD-PARTY-NOTICES.md.
+  'cloud-upload': '<path d="M7 18a4.6 4.4 0 0 1 0 -9a5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7h-1"/><path d="M9 15l3 -3l3 3"/><path d="M12 12l0 9"/>',
+  store: '<path d="M3 21l18 0"/><path d="M3 7v1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1h-18l2 -4h14l2 4"/><path d="M5 21l0 -10.15"/><path d="M19 21l0 -10.15"/><path d="M9 21v-4a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v4"/>',
+  'coin-euro': '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M14.401 8c-.669 -.628 -1.5 -1 -2.401 -1c-2.21 0 -4 2.239 -4 5s1.79 5 4 5c.9 0 1.731 -.372 2.4 -1"/><path d="M7 10.5h4"/><path d="M7 13.5h4"/>',
+  stack: '<path d="M12 4l-8 4l8 4l8 -4l-8 -4"/><path d="M4 12l8 4l8 -4"/><path d="M4 16l8 4l8 -4"/>',
 };
 
 export function icon(name) {
@@ -202,7 +210,7 @@ export function vibrate(pattern = 35) {
 
 // --- dialogs --------------------------------------------------------------
 
-function openDialog(build) {
+export function openDialog(build) {
   return new Promise((resolve) => {
     const dialog = h('dialog', { class: 'dialog' });
     let result = null;

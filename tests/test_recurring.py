@@ -207,8 +207,9 @@ def test_restore_of_a_v010_backup_gets_the_new_table(client, tmp_path):
     assert response.status_code == 200, response.text
     live = sqlite3.connect(get_settings().db_path)
     try:
-        assert live.execute("PRAGMA user_version").fetchone()[0] == latest_schema_version() == 5
-        for table in ("recurring_expenses", "incomes", "recurring_incomes", "vinted_items", "vinted_photos"):
+        assert live.execute("PRAGMA user_version").fetchone()[0] == latest_schema_version() == 7
+        for table in ("recurring_expenses", "incomes", "recurring_incomes", "vinted_items", "vinted_photos",
+                      "vinted_price_changes"):
             assert live.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
         assert live.execute(
             "SELECT name FROM categories WHERE system_key = 'vinted'"
