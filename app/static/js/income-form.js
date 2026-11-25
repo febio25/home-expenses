@@ -6,13 +6,15 @@
 
 import { h, todayIso } from './ui.js';
 import { AMOUNT_SHAPE, INTERVALS } from './expense-form.js';
+import { createCategoryPicker } from './category-picker.js';
 
-// options: { users, categories, me, values, onChange, variant }
-// `categories` is the fixed list [{ code, name }].
+// options: { users, categories, me, values, onChange, onCategoryName, variant }
+// `categories` is the fixed list [{ code, name, icon }]. onCategoryName:
+// as in the expense form (0.15.0).
 // variant 'recurring': the form of a recurring template. The date becomes
 // the next due date (no upper limit) and "Si ripete ogni" is added.
 export function createIncomeForm({
-  users, categories, me, values, onChange = () => {}, variant = 'income',
+  users, categories, me, values, onChange = () => {}, onCategoryName = () => {}, variant = 'income',
 }) {
   const recurring = variant === 'recurring';
   const state = {
@@ -41,22 +43,20 @@ export function createIncomeForm({
     h('div', { class: 'receipt-line' }, amountInput,
       h('span', { class: 'receipt-currency', 'aria-hidden': 'true' }, '€')));
 
-  // --- category (fixed list) ------------------------------------------------
-  const categoryGrid = h('div', { class: 'cat-grid', role: 'group', 'aria-labelledby': 'income-category-label' });
+  // --- category (fixed list, icons from 0.15.0) -------------------------------
   const categoryError = h('p', { class: 'field-error', hidden: true });
-  function renderCategories() {
-    categoryGrid.replaceChildren(...categories.map((category) => h('button', {
-      class: `cat${category.code === state.category ? ' is-selected' : ''}`,
-      type: 'button',
-      'aria-pressed': String(category.code === state.category),
-      onclick: () => {
-        state.category = category.code;
-        setError(categoryError, null);
-        renderCategories();
-        onChange();
-      },
-    }, category.name)));
-  }
+  const picker = createCategoryPicker({
+    items: categories.map((category) => ({ key: category.code, name: category.name, icon: category.icon })),
+    selected: state.category,
+    labelId: 'income-category-label',
+    onName: onCategoryName,
+    onPick: (code) => {
+      state.category = code;
+      setError(categoryError, null);
+      onChange();
+    },
+  });
+  const categoryGrid = picker.grid;
 
   // --- date, frequency, received by, note -------------------------------------
   // Same window as the server: from 2000 to today. A template's next due
@@ -100,11 +100,9 @@ export function createIncomeForm({
     },
   });
 
-  renderCategories();
-
   const element = h('div', { class: 'income-form' },
     amountBlock, amountError,
-    h('span', { class: 'label', id: 'income-category-label' }, 'Categoria'),
+    picker.label,
     categoryGrid, categoryError,
     h('label', { class: 'label', for: 'income-date' }, recurring ? 'Prossima scadenza' : 'Data'), dateInput,
     ...(recurring ? [h('span', { class: 'label', id: 'income-interval-label' }, 'Si ripete ogni'), intervalGroup] : []),
@@ -156,7 +154,7 @@ export function createIncomeForm({
   }
 
   return {
-    element, validate, toPayload, toRecurringPayload, showAmountError,
+    element, validate, toPayload, toRecurringPayload, showAmountError, categoryName: () => picker.name(),
     focusAmount: () => amountInput.focus({ preventScroll: true }),
   };
 }

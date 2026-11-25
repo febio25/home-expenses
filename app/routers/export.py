@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from .. import dates
 from ..dates import range_filter, resolve_range
 from ..db import get_db
-from ..export_brief import build_brief, period_text
+from ..export_brief import Movements, VintedItems, build_brief, period_text
 from ..money import format_cents
 from ..schemas import INCOME_CATEGORIES, ExportBriefOut
 from ..security import current_user
@@ -316,15 +316,22 @@ def export_brief(
     month: str | None = Query(None, description="YYYY-MM; wins over from/to"),
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
+    what: str = Query(
+        "all",
+        pattern="^(expenses|incomes|vinted|all)$",
+        description="expenses, incomes, vinted (every item, no period) or all three",
+    ),
+    flavour: str = Query("standard", alias="format", pattern="^(standard|excel_it)$"),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """The CSV files of a period for an AI assistant, and the text to send
-    with them (0.14.0): what they hold, the totals to check them against,
-    the conventions of the app. The files are the standard flavour of
-    GET /export.csv and GET /export/incomes.csv; a file with no rows is left
-    out. Nothing is sent anywhere: the app downloads the files and copies
-    the text."""
+    """The CSV files of an export and the text to send with them (0.14.0;
+    from 0.15.0 for every kind of export, in either format): what the files
+    hold, the totals to check them against, the conventions of the app. The
+    files are those of GET /export.csv, /export/incomes.csv and
+    /export/vinted.csv; a file with no rows is left out. Nothing is sent
+    anywhere: the app downloads or shares the files and copies the text."""
     start, end = resolve_range(month, date_from, date_to)
+    excel = flavour == "excel_it"
     window: dict[str, str] = {}
     if month:
         window["month"] = month
@@ -333,44 +340,65 @@ def export_brief(
             window["from"] = start.isoformat()
         if end:
             window["to"] = end.isoformat()
-    where, params = range_filter(start, end, column="expense_date")
-    future = dates.today().isoformat()
-    spent = db.execute(
-        "SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS cents,"
-        "       COALESCE(SUM(expense_date > ?), 0) AS planned_count,"
-        "       COALESCE(SUM(CASE WHEN expense_date > ? THEN amount_cents END), 0) AS planned_cents"
-        f"  FROM expenses{where}",
-        [future, future, *params],
-    ).fetchone()
-    where, params = range_filter(start, end, column="income_date")
-    income = db.execute(
-        "SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS cents,"
-        "       COALESCE(SUM(CASE WHEN category = 'meal_voucher' THEN amount_cents END), 0) AS vouchers"
-        f"  FROM incomes{where}",
-        params,
-    ).fetchone()
-    vinted = db.execute("SELECT name FROM categories WHERE system_key = 'vinted'").fetchone()
-
-    query = "&".join(f"{key}={value}" for key, value in {**window, "format": "standard"}.items())
+    query = "&".join(f"{key}={value}" for key, value in {**window, "format": flavour}.items())
     files = []
-    expense_file = income_file = None
-    if spent["count"]:
-        expense_file = _filename("spese", month, start, end, False)
-        files.append({"name": expense_file, "url": f"/api/v1/export.csv?{query}"})
-    if income["count"]:
-        income_file = _filename("entrate", month, start, end, False)
-        files.append({"name": income_file, "url": f"/api/v1/export/incomes.csv?{query}"})
+    expenses = incomes = vinted_items = None
+
+    if what in ("expenses", "all"):
+        where, params = range_filter(start, end, column="expense_date")
+        future = dates.today().isoformat()
+        spent = db.execute(
+            "SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS cents,"
+            "       COALESCE(SUM(expense_date > ?), 0) AS planned_count,"
+            "       COALESCE(SUM(CASE WHEN expense_date > ? THEN amount_cents END), 0) AS planned_cents"
+            f"  FROM expenses{where}",
+            [future, future, *params],
+        ).fetchone()
+        name = _filename("spese", month, start, end, excel) if spent["count"] else None
+        if name:
+            files.append({"name": name, "url": f"/api/v1/export.csv?{query}"})
+        expenses = Movements(name, spent["count"], spent["cents"], spent["planned_count"], spent["planned_cents"])
+
+    if what in ("incomes", "all"):
+        where, params = range_filter(start, end, column="income_date")
+        income = db.execute(
+            "SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS cents,"
+            "       COALESCE(SUM(CASE WHEN category = 'meal_voucher' THEN amount_cents END), 0) AS vouchers"
+            f"  FROM incomes{where}",
+            params,
+        ).fetchone()
+        name = _filename("entrate", month, start, end, excel) if income["count"] else None
+        if name:
+            files.append({"name": name, "url": f"/api/v1/export/incomes.csv?{query}"})
+        incomes = Movements(name, income["count"], income["cents"], voucher_cents=income["vouchers"])
+
+    if what in ("vinted", "all"):
+        items = items_out(db, db.execute(ITEM_SELECT).fetchall())
+        name = f"vinted_articoli{'_excel' if excel else ''}.csv" if items else None
+        if name:
+            files.append({"name": name, "url": f"/api/v1/export/vinted.csv?format={flavour}"})
+        by_status = {}
+        for status, label in VINTED_STATUS_LABELS.items():
+            count = sum(1 for item in items if item["status"] == status)
+            if count:
+                by_status[label] = count
+        vinted_items = VintedItems(
+            file=name,
+            count=len(items),
+            by_status=by_status,
+            paid_cents=sum(item["purchase"]["amount_cents"] for item in items if item["purchase"]),
+            sold_cents=sum(item["sale"]["amount_cents"] for item in items if item["sale"]),
+            gain_cents=sum(item["gain_cents"] for item in items if item["sale"] and item["gain_cents"] is not None),
+        )
+
+    vinted = db.execute("SELECT name FROM categories WHERE system_key = 'vinted'").fetchone()
+    period = "tutti gli articoli Vinted registrati" if what == "vinted" else period_text(month, start, end)
     text = build_brief(
-        period=period_text(month, start, end),
-        expense_file=expense_file,
-        expense_count=spent["count"],
-        expense_cents=spent["cents"],
-        planned_count=spent["planned_count"],
-        planned_cents=spent["planned_cents"],
-        income_file=income_file,
-        income_count=income["count"],
-        income_cents=income["cents"],
-        voucher_cents=income["vouchers"],
+        period=period,
+        expenses=expenses,
+        incomes=incomes,
+        vinted=vinted_items,
+        excel=excel,
         vinted_category=vinted["name"] if vinted else None,
         vinted_income_category=INCOME_CATEGORIES["vinted"],
         voucher_category=INCOME_CATEGORIES["meal_voucher"],

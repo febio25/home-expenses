@@ -13,6 +13,15 @@ esposta su internet.
   I suggerimenti degli esercenti seguono l'uso degli ultimi 90 giorni (dalla
   0.14.0); l'ordine dei pulsanti delle categorie si cambia in *Impostazioni →
   Categorie → Cambia l'ordine*.
+- Categorie a icone (dalla 0.15.0): quattro per riga, in Nuova spesa, Nuova
+  entrata, nelle modifiche e nelle ricorrenti. Il nome della categoria
+  scelta è scritto accanto a «Categoria» sopra le icone, compare per un
+  secondo e mezzo in un fumetto sopra l'icona toccata (anche quando la
+  sceglie un esercente noto) e nel pulsante: «Salva in Ristoranti e bar».
+  L'esercente scelto resta primo nella riga dei suggerimenti, colorato come
+  la categoria; toccandolo di nuovo si toglie. Le icone delle categorie di
+  spesa si scelgono in *Impostazioni → Categorie* (58 icone); quelle delle
+  entrate sono fisse.
 - Avvio immediato (dalla 0.14.0): utenti, categorie ed esercenti restano
   salvati sul telefono, quindi la schermata di inserimento compare subito,
   anche con Tailscale lento o spento, e l'importo si può scrivere; per
@@ -99,6 +108,8 @@ esposta su internet.
 - *Impostazioni* si apre dall'icona a ingranaggio in alto a destra, accanto
   al nome, nelle schermate Nuova spesa, Movimenti, Riepilogo e Vinted.
 - Gestione di categorie ed esercenti (rinomina, disattiva, unisci i doppioni).
+  Dalla 0.15.0 ogni categoria ha un solo pulsante, «Modifica»: nome, icona
+  e «Disattiva categoria» nella stessa finestra.
   Dalla 0.11.0 *Impostazioni → Esercenti* ha la ricerca (senza maiuscole e
   accenti) e i **possibili doppioni**: nomi uguali a meno di maiuscole,
   accenti, punteggiatura e sigle (srl, spa…), un nome dentro l'altro («Lidl»
@@ -108,8 +119,9 @@ esposta su internet.
   La categoria *Vinted* serve alla sezione: si può rinominare ma non
   disattivare né eliminare.
 - Export CSV per mese o intervallo, in due formati: un file per le spese e
-  uno per le entrate; più un file con tutti gli articoli Vinted. Dalla 0.14.0
-  anche *Per Claude*: vedi [Export CSV](#export-csv).
+  uno per le entrate; più un file con tutti gli articoli Vinted, e dalla
+  0.15.0 *Tutto*. Ogni export si scarica o, dal telefono, si condivide con
+  il testo che lo accompagna: vedi [Export CSV](#export-csv).
 - Backup e ripristino dell'intero database, foto degli articoli comprese;
   dalla 0.14.0 anche copie automatiche sull'Umbrel (vedi [Backup e
   ripristino](#backup-e-ripristino)).
@@ -438,6 +450,17 @@ era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
 
+Dalla 0.14.0 alla 0.15.0, al primo avvio, il database passa dallo schema 8
+al 9 (prima l'app ne salva una copia, *Prima di un aggiornamento*): ogni
+categoria di spesa riceve il campo dell'icona. Le dieci categorie iniziali
+e *Vinted* hanno subito la loro icona, riconosciute dal nome originale; una
+categoria rinominata o creata a mano mostra l'icona generica (quattro forme)
+finché non se ne sceglie una in *Impostazioni → Categorie → Modifica*. Un
+backup della 0.15.0 non si ripristina sulla 0.14.0; un backup vecchio si
+ripristina sulla 0.15.0 e riceve le icone nello stesso modo. Per tornare
+alla 0.14.0 serve la copia *Prima di un aggiornamento* o un backup fatto
+prima.
+
 Dalla 0.13.0 alla 0.14.0 il database non cambia (schema invariato): tornare
 alla 0.13.0 resta possibile. Al primo avvio le copie lasciate dai ripristini
 (`pre-restore-*.db`) passano nella cartella `snapshots` della cartella dati,
@@ -621,22 +644,38 @@ apostrofo davanti: per Excel è il segno «questo è testo» e nella cella non
 si vede. Senza, Excel lo leggerebbe come una formula (`#NOME?`). Gli importi
 restano numeri e il formato *Standard*, quello per l'AI, non cambia mai.
 
-### Per Claude (dalla 0.14.0)
+### Scarica o Condividi, e *Tutto* (dalla 0.15.0)
 
-Stessa schermata, scegliendo *Per Claude*, con un mese o un intervallo:
-l'app scarica i CSV standard di spese ed entrate del periodo (un file senza
-righe viene saltato) e copia negli appunti un breve testo da incollare con
-i file. Il testo dice cosa contengono, numero di righe e totali (spese,
-entrate, buoni pasto, differenza) da usare come controllo, e le convenzioni
-dell'app che le colonne da sole non dicono: buoni pasto come entrata e
-acquisti fatti con i buoni tra le spese, categoria *Vinted*, spese con data
-futura (previste).
+Ogni export (Spese, Entrate, Articoli Vinted, Tutto) ha due pulsanti:
 
-Poi, in Claude: una chat nuova nel progetto delle analisi, allega i file
-dalla cartella Download e incolla il testo. L'app non manda nulla a nessuno.
-La prima volta Chrome può chiedere il permesso di scaricare più file
-(«Consenti»). Se gli appunti non sono disponibili compare una finestra con
-il testo da copiare a mano.
+- **Scarica**: i file vanno nella cartella Download. La conferma ha
+  «Copia testo», che copia negli appunti il testo che accompagna i file.
+- **Condividi** (solo dal telefono, dall'indirizzo di Tailscale): copia il
+  testo negli appunti e apre il menu Condividi di Android con i file. Si
+  sceglie l'app (Claude, Drive, Gmail…), si allegano i file e si incolla il
+  testo. Testo e file vanno separati perché molte app, quando ricevono un
+  file, ignorano il testo. Da `http://umbrel.local:8395` o da un computer
+  il pulsante non c'è: Chrome condivide i file solo in HTTPS, e il CSV è tra
+  i tipi che accetta. Il backup (`.db`) non è tra questi: si scarica soltanto.
+
+*Tutto* (fino alla 0.14.0 *Per Claude*) sono le spese e le entrate del
+periodo e tutti gli articoli Vinted, in file separati (un file senza righe
+viene saltato), nel formato scelto.
+
+Il testo dice cosa contengono i file, numero di righe e totali da usare
+come controllo (spese, entrate, buoni pasto, differenza; per Vinted gli
+articoli per stato, pagato, venduto e guadagno) e le convenzioni dell'app
+che le colonne da sole non dicono: buoni pasto come entrata e acquisti fatti
+con i buoni tra le spese, categoria *Vinted*, spese con data futura
+(previste), formato *Excel italiano*.
+
+L'app non manda nulla a nessuno: la condivisione è un gesto verso un'altra
+app. Non è verificato che l'app Claude per Android accetti i CSV dal menu
+Condividi, né che la chat aperta così finisca in un progetto: in quel caso
+si scarica e si allegano i file nel progetto delle analisi. La prima volta
+Chrome può chiedere il permesso di scaricare più file («Consenti»). Se gli
+appunti non sono disponibili compare una finestra con il testo da copiare a
+mano.
 
 ### Entrate
 
@@ -876,7 +915,17 @@ CDN.
     dalla più recente) e `POST /api/v1/backups/{name}/restore`.
   - `GET /api/v1/export/brief` (filtri `month`, oppure `from` e `to`):
     `files` (nome e indirizzo dei CSV standard del periodo) e `text` (il
-    testo da mandare con i file a un assistente AI).
+    testo da mandare con i file a un assistente AI). Dalla 0.15.0 anche
+    `what` (`expenses`, `incomes`, `vinted` o `all`, predefinito; `vinted`
+    senza periodo) e `format` (`standard` o `excel_it`).
+- Dalla 0.15.0:
+  - `GET /api/v1/categories/icons` → `{icons, default}`: le icone che una
+    categoria di spesa può avere. Ogni categoria ha `icon` (il nome; quella
+    predefinita, `category`, se non è stata scelta); `POST` e `PATCH
+    /api/v1/categories` accettano `icon` (422 se non è nell'elenco).
+  - `GET /api/v1/incomes/categories`: ogni voce ha anche `icon` (fissa).
+  - Le immagini delle icone sono Tabler Icons copiate nell'interfaccia
+    (`app/static/js/category-icons.js`); l'API dà solo i nomi.
 
 ## Sviluppo
 

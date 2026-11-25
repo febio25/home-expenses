@@ -12,6 +12,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
+from ..category_icons import income_icon
 from ..dates import check_expense_date, range_filter, resolve_range
 from ..db import get_db, utc_now
 from ..schemas import INCOME_CATEGORIES, IncomeCategoryOut, IncomeCreate, IncomeOut, IncomeUpdate
@@ -60,7 +61,10 @@ def _by_client_uuid(db: sqlite3.Connection, client_uuid: str | None) -> int | No
 @router.get("/categories", response_model=list[IncomeCategoryOut])
 def list_income_categories(user: sqlite3.Row = Depends(current_user)):
     """The fixed list of income categories, in display order."""
-    return [{"code": code, "name": name} for code, name in INCOME_CATEGORIES.items()]
+    return [
+        {"code": code, "name": name, "icon": income_icon(code)}
+        for code, name in INCOME_CATEGORIES.items()
+    ]
 
 
 def income_filters(

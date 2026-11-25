@@ -43,6 +43,9 @@ export async function mount(root, ctx) {
   }
   if (draftValues.paidBy && !users.some((u) => u.id === draftValues.paidBy)) delete draftValues.paidBy;
 
+  // Declared before the form: its callback may update them right away.
+  let saveLabel = 'Salva spesa';
+  let saveButton = null;
   const form = createExpenseForm({
     users,
     categories: activeCategories,
@@ -54,6 +57,12 @@ export async function mount(root, ctx) {
       draft.at = Date.now();
       local.set(DRAFT_KEY, draft);
       hideError();
+    },
+    // 0.15.0: the button says where the expense goes, «Salva in Svago»: the
+    // categories are icons, and this is read just before the tap.
+    onCategoryName: (name) => {
+      saveLabel = name ? `Salva in ${name}` : 'Salva spesa';
+      if (saveButton && !saveButton.disabled) saveButton.textContent = saveLabel;
     },
   });
   // Starting the next expense (a tap or a keystroke anywhere in the form)
@@ -68,14 +77,15 @@ export async function mount(root, ctx) {
   }
   function hideError() { errorBanner.hidden = true; }
 
-  const saveButton = h('button', {
-    class: 'btn btn-primary btn-block btn-save', type: 'button',
+  saveButton = h('button', {
+    class: 'btn btn-primary btn-block btn-save btn-save-named', type: 'button',
     // Keep the keyboard open while tapping Save: if the field lost focus the
     // keyboard would close and the button would move away under the thumb.
     // It is closed on purpose once the expense is saved (see save()).
     onpointerdown: (event) => event.preventDefault(),
     onclick: save,
-  }, 'Salva spesa');
+  }, form.categoryName() ? `Salva in ${form.categoryName()}` : 'Salva spesa');
+  saveLabel = saveButton.textContent;
 
   async function save() {
     form.syncToday(); // the app may have been open since yesterday
@@ -120,7 +130,7 @@ export async function mount(root, ctx) {
     } catch (error) {
       if (error.network) {
         vibrate([60, 60, 60]);
-        showError('Spesa non salvata.', ' La connessione è caduta: i dati sono ancora qui. Controlla Tailscale e tocca di nuovo «Salva spesa».');
+        showError('Spesa non salvata.', ' La connessione è caduta: i dati sono ancora qui. Controlla Tailscale e tocca di nuovo «Salva».');
       } else if (error.status === 422 && /mporto|decimali/.test(error.message)) {
         form.showAmountError(error.message);
       } else if (error.status !== 401) {
@@ -128,7 +138,7 @@ export async function mount(root, ctx) {
       }
     } finally {
       saveButton.disabled = false;
-      saveButton.textContent = 'Salva spesa';
+      saveButton.textContent = saveLabel;
     }
   }
 

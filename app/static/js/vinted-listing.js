@@ -326,6 +326,62 @@ export async function shareWithClaude(item) {
   await sharePhoto(ready.file);
 }
 
+// 0.15.0: can this browser share files of this kind? (Chrome on Android
+// in HTTPS: yes for CSV; plain HTTP or most computers: no.)
+export function canShareFiles(files) {
+  try {
+    return Boolean(window.isSecureContext && navigator.share && navigator.canShare && navigator.canShare({ files }));
+  } catch (error) { return false; }
+}
+
+async function shareFilesOnce(files, againText) {
+  try {
+    await navigator.share({ files });
+  } catch (error) {
+    if (error.name === 'AbortError') return; // share sheet closed
+    // The tap is no longer valid (the files took a while): one more tap.
+    await shareAgainDialog({
+      title: files.length === 1 ? 'Condividi il file' : 'Condividi i file',
+      text: againText,
+      label: 'Condividi',
+      run: () => shareFilesOnce(files, againText),
+    });
+  }
+}
+
+// 0.15.0, the exports in Impostazioni: the text to the clipboard first, then
+// the files to the share sheet, as for the photo of a Vinted item (many apps
+// drop the text when they receive a file). Without the clipboard, the text
+// in a box to copy by hand, then a button to share.
+export async function shareFilesWithText(files, text) {
+  const many = files.length > 1;
+  let copied = true;
+  try { await writeClipboard(text); } catch (error) { copied = false; }
+  if (!copied) {
+    await openDialog((finish) => {
+      const area = h('textarea', { class: 'input textarea', readOnly: true, rows: 8 }, text);
+      setTimeout(() => { area.focus(); area.select(); }, 50);
+      return h('div', { class: 'dialog-body' },
+        h('h2', { class: 'dialog-title' }, 'Copia il testo'),
+        h('p', { class: 'dialog-text' },
+          `Tieni premuto sul testo, «Seleziona tutto», poi «Copia». Poi condividi ${many ? 'i file' : 'il file'} e incolla il testo.`),
+        area,
+        h('div', { class: 'dialog-actions' },
+          h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => finish(null) }, 'Chiudi'),
+          h('button', {
+            class: 'btn btn-primary', type: 'button',
+            onclick: () => { finish(null); shareFilesOnce(files, 'Tocca qui sotto per condividere.'); },
+          }, many ? 'Condividi i file' : 'Condividi il file')));
+    });
+    return;
+  }
+  // At the top: the share sheet that opens now covers the bottom of the screen.
+  toast(`Testo copiato: allega ${many ? 'i file' : 'il file'}, poi tieni premuto nella chat e scegli «Incolla».`, {
+    kind: 'success', duration: 10000, top: true,
+  });
+  await shareFilesOnce(files, `Il testo è negli appunti. Tocca qui sotto per condividere ${many ? 'i file' : 'il file'}.`);
+}
+
 export async function copyRequest(item) {
   let ready;
   try {

@@ -2,6 +2,7 @@
 // Order follows the thumb: amount, merchant, category; the rest has defaults.
 
 import { h, todayIso, latestPlannedIso, isPlanned, PAYMENT_LABELS } from './ui.js';
+import { createCategoryPicker } from './category-picker.js';
 
 const MAX_SUGGESTIONS = 6;
 // Light check for instant feedback; the server does the real parsing.
@@ -60,14 +61,16 @@ export const INTERVALS = [
   { value: 12, label: 'Anno', long: 'ogni anno' },
 ];
 
-// options: { users, categories, merchants, me, values, onChange, variant }
+// options: { users, categories, merchants, me, values, onChange, onCategoryName, variant }
+// onCategoryName(name|null): the chosen category changed (0.15.0, the Save
+// button of Nuova spesa says where the expense goes).
 // `categories` must already be the list to show (active ones, plus the
 // expense's own category when editing an old expense).
 // variant 'recurring': the form of a recurring template. The date becomes
 // the next due date, a frequency control is added and the details panel
 // starts open, because both matter for a template.
 export function createExpenseForm({
-  users, categories, merchants, me, values, onChange = () => {}, variant = 'expense',
+  users, categories, merchants, me, values, onChange = () => {}, onCategoryName = () => {}, variant = 'expense',
 }) {
   const recurring = variant === 'recurring';
   const state = {
@@ -128,11 +131,17 @@ export function createExpenseForm({
     if (!categories.some((category) => category.id === merchant.last_category_id)) return;
     state.categoryId = merchant.last_category_id;
     setError(categoryError, null);
-    renderCategories();
+    // The bubble shows what the merchant chose: an icon alone could go unnoticed.
+    picker.set(state.categoryId, { bubble: true });
   }
 
+  // 0.15.0: the merchant chosen (tapped, or typed in full) stays first in
+  // the row, coloured like a chosen category; tapping it again clears it.
   function renderSuggestions() {
-    suggestions.replaceChildren(...merchantMatches(merchants, state.merchant).map((merchant) => h('button', {
+    const exact = state.merchant.trim()
+      ? merchants.find((merchant) => normalize(merchant.name) === normalize(state.merchant))
+      : null;
+    const chips = merchantMatches(merchants, state.merchant).map((merchant) => h('button', {
       class: 'chip', type: 'button',
       onclick: () => {
         state.merchant = merchant.name;
@@ -141,28 +150,41 @@ export function createExpenseForm({
         renderSuggestions();
         changed();
       },
-    }, merchant.name)));
+    }, merchant.name));
+    if (exact) {
+      chips.unshift(h('button', {
+        class: 'chip is-selected', type: 'button', 'aria-pressed': 'true',
+        'aria-label': `${exact.name}, scelto: tocca per toglierlo`,
+        onclick: () => {
+          state.merchant = '';
+          merchantInput.value = '';
+          renderSuggestions();
+          changed();
+        },
+      }, exact.name));
+    }
+    suggestions.replaceChildren(...chips);
     suggestions.hidden = suggestions.childElementCount === 0;
+    if (exact) suggestions.scrollLeft = 0;
   }
 
-  // --- category -----------------------------------------------------------
-  const categoryGrid = h('div', { class: 'cat-grid', role: 'group', 'aria-labelledby': 'category-label' });
+  // --- category (icons, 0.15.0: category-picker.js) ----------------------
   const categoryError = h('p', { class: 'field-error', hidden: true });
-
-  function renderCategories() {
-    categoryGrid.replaceChildren(...categories.map((category) => h('button', {
-      class: `cat${category.id === state.categoryId ? ' is-selected' : ''}`,
-      type: 'button',
-      'aria-pressed': String(category.id === state.categoryId),
-      onclick: () => {
-        state.categoryId = category.id;
-        state.categoryTouched = true;
-        setError(categoryError, null);
-        renderCategories();
-        changed();
-      },
-    }, category.name)));
-  }
+  const asItems = (list) => list.map((category) => ({ key: category.id, name: category.name, icon: category.icon }));
+  const picker = createCategoryPicker({
+    items: asItems(categories),
+    selected: state.categoryId,
+    labelId: 'category-label',
+    onName: onCategoryName,
+    onPick: (id) => {
+      state.categoryId = id;
+      state.categoryTouched = true;
+      setError(categoryError, null);
+      changed();
+    },
+  });
+  const categoryGrid = picker.grid;
+  function renderCategories() { picker.set(state.categoryId); }
 
   // --- details (date, paid by, method, note) ------------------------------
   // Same window as the server: from 2000 to a year ahead (0.12.0: a direct
@@ -277,7 +299,7 @@ export function createExpenseForm({
     amountBlock, amountError,
     h('label', { class: 'label', for: 'expense-merchant' }, 'Esercente'),
     merchantInput, suggestions,
-    h('span', { class: 'label', id: 'category-label' }, 'Categoria'),
+    picker.label,
     categoryGrid, categoryError,
     details);
 
@@ -358,6 +380,15 @@ export function createExpenseForm({
 
   function setMerchants(list) {
     merchants = list;
+    // The name typed may only now be a known merchant (the fresh list
+    // arrived after the typing): its category, as if typed now.
+    const exact = state.merchant.trim()
+      ? merchants.find((merchant) => normalize(merchant.name) === normalize(state.merchant))
+      : null;
+    if (exact && state.categoryId === null) {
+      applyMerchantCategory(exact);
+      if (state.categoryId !== null) changed();
+    }
     renderSuggestions();
   }
 
@@ -370,7 +401,8 @@ export function createExpenseForm({
       state.categoryTouched = false;
       changed();
     }
-    renderCategories();
+    picker.set(state.categoryId);
+    picker.setItems(asItems(categories));
   }
 
   // The calendar moved on (app reopened the next day). Labels like "Oggi"
@@ -392,7 +424,7 @@ export function createExpenseForm({
 
   return {
     element, getValues, toPayload, toRecurringPayload, validate, reset, setMerchants, setCategories,
-    syncToday, showAmountError,
+    syncToday, showAmountError, categoryName: () => picker.name(),
     focusAmount: () => amountInput.focus({ preventScroll: true }),
   };
 }

@@ -53,16 +53,30 @@ class CategoryOut(BaseModel):
         description="Set on a category the app itself relies on (\"vinted\"): "
         "it can be renamed, never deactivated or deleted",
     )
+    icon: str = Field(
+        default="category",
+        description="Name of the category's icon (0.15.0), one of GET /categories/icons; "
+        "the default one when none was chosen",
+    )
 
 
 class CategoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=40)
+    icon: str | None = Field(default=None, max_length=40, description="One of GET /categories/icons")
 
 
 class CategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=40)
     is_active: bool | None = None
     sort_order: int | None = None
+    icon: str | None = Field(default=None, max_length=40, description="One of GET /categories/icons")
+
+
+class CategoryIconsOut(BaseModel):
+    """GET /categories/icons (0.15.0): the icons a category can have."""
+
+    icons: list[str]
+    default: str
 
 
 class CategoryOrderIn(BaseModel):
@@ -299,6 +313,7 @@ IncomeCategory = Literal[tuple(INCOME_CATEGORIES)]
 class IncomeCategoryOut(BaseModel):
     code: str
     name: str
+    icon: str = Field(default="category", description="Name of the category's icon (0.15.0), fixed")
 
 
 class IncomeCreate(BaseModel):

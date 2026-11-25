@@ -190,7 +190,7 @@ def test_backup_and_restore_keep_the_pairs(client, several, tmp_path):
     assert response.status_code == 200, response.text
     live = sqlite3.connect(get_settings().db_path)
     try:
-        assert live.execute("PRAGMA user_version").fetchone()[0] == latest_schema_version() == 8
+        assert live.execute("PRAGMA user_version").fetchone()[0] == latest_schema_version() == 9
         assert live.execute("SELECT COUNT(*) FROM merchant_distinct_pairs").fetchone()[0] == 0
         assert live.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:

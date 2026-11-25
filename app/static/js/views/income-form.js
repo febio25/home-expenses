@@ -69,6 +69,9 @@ export async function mount(root, ctx) {
   // The sale of a Vinted item stays a Vinted income (the server refuses a
   // change): only that category is offered.
   const vintedTitle = income && income.vinted_item_id ? income.vinted_item_title : null;
+  // 0.15.0: a new income's button says where it goes, «Salva in Stipendio».
+  let saveButton = null;
+  const labelFor = (name) => (name ? `Salva in ${name}` : 'Salva entrata');
   const form = createIncomeForm({
     users,
     categories: vintedTitle
@@ -77,18 +80,19 @@ export async function mount(root, ctx) {
     me: state.me,
     values,
     onChange: () => { errorBanner.hidden = true; },
+    onCategoryName: (name) => { if (creating && saveButton) saveButton.textContent = labelFor(name); },
   });
 
   // Same key for every retry of this screen: a dropped connection never
   // stores the income twice.
   const clientUuid = newUuid();
-  const saveButton = h('button', {
-    class: creating ? 'btn btn-primary btn-block btn-save' : 'btn btn-primary btn-grow',
+  saveButton = h('button', {
+    class: creating ? 'btn btn-primary btn-block btn-save btn-save-named' : 'btn btn-primary btn-grow',
     type: 'button',
     // Keep the keyboard open while tapping, as on the expense screens.
     onpointerdown: (event) => event.preventDefault(),
     onclick: save,
-  }, creating ? 'Salva entrata' : 'Salva modifiche');
+  }, creating ? labelFor(form.categoryName()) : 'Salva modifiche');
 
   async function save() {
     if (saveButton.disabled || !form.validate()) return;

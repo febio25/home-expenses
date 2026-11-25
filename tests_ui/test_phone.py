@@ -35,7 +35,7 @@ def add_expense(api, **overrides):
 def save(phone, amount, merchant, category):
     phone.fill("#expense-amount", amount)
     phone.fill("#expense-merchant", merchant)
-    phone.click(f".cat:has-text('{category}')")
+    phone.click(f".cat[aria-label='{category}']")  # 0.15.0: icons, the name is the label
     phone.click(".btn-save")
 
 
@@ -140,7 +140,8 @@ def test_reorder_categories_changes_the_buttons_of_nuova_spesa(phone, server):
     phone.click("button:has-text('Fatto')")
     phone.goto(f"{server}/")
     phone.wait_for_selector(".cat")
-    assert phone.locator(".cat").all_inner_texts()[:3] == ["Spesa alimentare", "Salute", "Casa e utenze"]
+    labels = phone.eval_on_selector_all(".cat", "(nodes) => nodes.map((node) => node.getAttribute('aria-label'))")
+    assert labels[:3] == ["Spesa alimentare", "Salute", "Casa e utenze"]
 
 
 def test_backup_download_and_the_files_for_claude(phone, api, server):
@@ -156,15 +157,18 @@ def test_backup_download_and_the_files_for_claude(phone, api, server):
     phone.wait_for_selector(".backup-last:has-text('(Fabio)')")
 
     phone.click("summary:has-text('Esporta')")
-    phone.click("label.radio:has-text('Per Claude')")
+    phone.click("label.radio:has-text('Tutto')")  # 0.15.0, «Per Claude» until 0.14.0
     names = []
     phone.on("download", lambda item: names.append(item.suggested_filename))
-    phone.click("button:has-text('Scarica i file e copia il testo')")
-    phone.wait_for_selector(".toast:has-text('testo copiato')")
+    phone.click(".export-actions button:has-text('Scarica')")
+    toast = phone.wait_for_selector(".toast:has-text('2 file scaricati.')")
     month = date.today().strftime("%Y-%m")
     assert names == [f"spese_{month}.csv", f"entrate_{month}.csv"]
+    toast.query_selector(".toast-action").click()  # «Copia testo»
+    phone.wait_for_selector(".toast:has-text('Testo copiato')")
     text = phone.evaluate("() => navigator.clipboard.readText()")
     assert "1 spesa, totale 20,00 €" in text
+    assert "Nessun articolo Vinted registrato." in text
     assert "Prima di tutto controlla di aver letto tutte le righe" in text
 
 

@@ -1,5 +1,6 @@
-"""The text that goes with the CSV files sent to an AI assistant (0.14.0,
-"Per Claude" in Impostazioni → Esporta CSV).
+"""The text that goes with the CSV files of an export (0.14.0, "Per Claude";
+from 0.15.0 every export of Impostazioni → Esporta CSV: spese, entrate,
+articoli Vinted or «Tutto»).
 
 The app never calls anything outside: it downloads the files and copies
 this text, the person attaches and pastes them in their own chat. The text
@@ -11,6 +12,7 @@ planned expenses.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 
 MONTHS = [
@@ -49,65 +51,126 @@ def _count(number: int, one: str, many: str) -> str:
     return f"{number} {one if number == 1 else many}"
 
 
+@dataclass
+class Movements:
+    """Expenses or incomes of the period. ``file`` is None when there are
+    none (the file is then left out)."""
+
+    file: str | None
+    count: int
+    cents: int
+    planned_count: int = 0  # expenses only: dated after today
+    planned_cents: int = 0
+    voucher_cents: int = 0  # incomes only: meal vouchers
+
+
+@dataclass
+class VintedItems:
+    """Every Vinted item (no period: they live for months)."""
+
+    file: str | None
+    count: int
+    by_status: dict[str, int]  # label → count, in display order, zeros left out
+    paid_cents: int
+    sold_cents: int
+    gain_cents: int
+
+
+def _plural_items(number: int) -> str:
+    return _count(number, "articolo", "articoli")
+
+
 def build_brief(
     *,
     period: str,
-    expense_file: str | None,
-    expense_count: int,
-    expense_cents: int,
-    planned_count: int,
-    planned_cents: int,
-    income_file: str | None,
-    income_count: int,
-    income_cents: int,
-    voucher_cents: int,
+    expenses: Movements | None,
+    incomes: Movements | None,
+    vinted: VintedItems | None,
+    excel: bool,
     vinted_category: str | None,
     vinted_income_category: str,
     voucher_category: str,
 ) -> str:
+    """The text for the parts that were asked for: a part that is None was
+    not asked for and is not mentioned; one asked for and empty says so."""
     lines = [f"Dati di «Spese di Casa», l'app delle spese della nostra famiglia: {period}.", ""]
+    lines.append("File allegati:")
+    if expenses is not None:
+        if expenses.file:
+            lines.append(
+                f"- {expenses.file}: {_count(expenses.count, 'spesa', 'spese')}, "
+                f"totale {euro(expenses.cents)}."
+            )
+        else:
+            lines.append("- Nessuna spesa registrata nel periodo.")
+    if incomes is not None:
+        if incomes.file:
+            vouchers = f", di cui {euro(incomes.voucher_cents)} in buoni pasto" if incomes.voucher_cents else ""
+            lines.append(
+                f"- {incomes.file}: {_count(incomes.count, 'entrata', 'entrate')}, totale "
+                f"{euro(incomes.cents)}{vouchers}."
+            )
+        else:
+            lines.append("- Nessuna entrata registrata nel periodo.")
+    if vinted is not None:
+        if vinted.file:
+            states = ", ".join(f"{count} {label.lower()}" for label, count in vinted.by_status.items())
+            lines.append(
+                f"- {vinted.file}: {_plural_items(vinted.count)} Vinted, tutti quelli registrati "
+                f"(non solo del periodo): {states}. Pagati {euro(vinted.paid_cents)}, "
+                f"venduti {euro(vinted.sold_cents)}, guadagno sui venduti "
+                f"{euro(vinted.gain_cents, signed=True)}."
+            )
+        else:
+            lines.append("- Nessun articolo Vinted registrato.")
+    if expenses is not None and incomes is not None and incomes.count:
+        lines.append(f"Entrate meno spese: {euro(incomes.cents - expenses.cents, signed=True)}.")
 
-    if expense_file or income_file:
-        lines.append("File allegati:")
-    if expense_file:
-        lines.append(
-            f"- {expense_file}: {_count(expense_count, 'spesa', 'spese')}, totale {euro(expense_cents)}."
-        )
-    else:
-        lines.append("- Nessuna spesa registrata nel periodo.")
-    if income_file:
-        vouchers = f", di cui {euro(voucher_cents)} in buoni pasto" if voucher_cents else ""
-        lines.append(
-            f"- {income_file}: {_count(income_count, 'entrata', 'entrate')}, totale "
-            f"{euro(income_cents)}{vouchers}."
-        )
-    else:
-        lines.append("- Nessuna entrata registrata nel periodo.")
-    if income_count:
-        lines.append(f"Entrate meno spese: {euro(income_cents - expense_cents, signed=True)}.")
     lines += [
         "",
         "Prima di tutto controlla di aver letto tutte le righe: numero e totali devono "
         "coincidere con questi.",
         "",
         "Come leggere i file:",
-        "- Una riga per movimento. Importi in euro, sempre positivi, con il punto decimale; "
-        "date nel formato AAAA-MM-GG.",
-        "- pagato_da (spese) e ricevuto_da (entrate): chi ha pagato o ricevuto; inserito_da: "
-        "chi l'ha registrato nell'app; creato_il: quando, in UTC.",
-        f"- Buoni pasto: sono un'entrata della categoria «{voucher_category}». Gli acquisti "
-        "pagati con i buoni sono spese normali, per intero, nella loro categoria.",
     ]
-    if vinted_category:
+    if excel:
+        lines.append(
+            "- Formato «Excel italiano»: separatore punto e virgola, virgola decimale. Una riga "
+            "per movimento o articolo; importi in euro, sempre positivi tranne il guadagno; "
+            "date nel formato AAAA-MM-GG."
+        )
+    else:
+        lines.append(
+            "- Una riga per movimento o articolo. Importi in euro, sempre positivi tranne il "
+            "guadagno, con il punto decimale; date nel formato AAAA-MM-GG."
+        )
+    if expenses is not None or incomes is not None:
+        lines.append(
+            "- pagato_da (spese) e ricevuto_da (entrate): chi ha pagato o ricevuto; inserito_da: "
+            "chi l'ha registrato nell'app; creato_il: quando, in UTC."
+        )
+    if incomes is not None or expenses is not None:
+        lines.append(
+            f"- Buoni pasto: sono un'entrata della categoria «{voucher_category}». Gli acquisti "
+            "pagati con i buoni sono spese normali, per intero, nella loro categoria."
+        )
+    if vinted_category and (expenses is not None or incomes is not None):
         lines.append(
             f"- Categoria «{vinted_category}» delle spese: articoli comprati per rivenderli su "
             f"Vinted e costi delle vendite (spedizioni, buste). Le vendite sono entrate della "
             f"categoria «{vinted_income_category}»."
         )
-    if planned_count:
+    if vinted is not None and vinted.file:
         lines.append(
-            f"- {_count(planned_count, 'spesa ha', 'spese hanno')} una data futura "
-            f"({euro(planned_cents)} in tutto): sono previste (addebiti già noti) e non ancora "
+            "- Articoli Vinted: guadagno = prezzo di vendita meno prezzo di acquisto (tutto il "
+            "prezzo per le cose che avevamo già in casa), vuoto finché l'articolo non è venduto; "
+            "giorni_in_vendita dalla pubblicazione alla vendita o a oggi. L'acquisto e la vendita "
+            "di ogni articolo sono anche, rispettivamente, una spesa e un'entrata."
+        )
+    if expenses is not None and expenses.planned_count:
+        lines.append(
+            f"- {_count(expenses.planned_count, 'spesa ha', 'spese hanno')} una data futura "
+            f"({euro(expenses.planned_cents)} in tutto): sono previste (addebiti già noti) e non ancora "
             "pagate, ma contano già nel loro mese."
         )
     return "\n".join(lines) + "\n"

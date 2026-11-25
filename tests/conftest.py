@@ -61,9 +61,16 @@ def categories(client):
     return {c["name"]: c["id"] for c in client.get("/api/v1/categories").json()}
 
 
+def strip_category_icons(conn):
+    """Undo migration 009 on a copy of a backup, to simulate one made
+    before 0.15.0."""
+    conn.execute("ALTER TABLE categories DROP COLUMN icon")
+
+
 def strip_merchant_pairs(conn):
     """Undo migration 008 on a copy of a backup, to simulate one made
-    before 0.11.0."""
+    before 0.11.0 (and what came after it: 0.15.0, the category icons)."""
+    strip_category_icons(conn)
     conn.execute("DROP TABLE merchant_distinct_pairs")
 
 

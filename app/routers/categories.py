@@ -6,14 +6,22 @@ import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from ..category_icons import CHOOSABLE_ICONS, DEFAULT_ICON
 from ..db import get_db, utc_now
-from ..schemas import CategoryCreate, CategoryOrderIn, CategoryOut, CategoryUpdate
+from ..schemas import (
+    CategoryCreate,
+    CategoryIconsOut,
+    CategoryOrderIn,
+    CategoryOut,
+    CategoryUpdate,
+)
 from ..security import current_user
 
 router = APIRouter(prefix="/categories", tags=["categories"], dependencies=[Depends(current_user)])
 
 _SELECT = (
     "SELECT c.id, c.name, c.sort_order, c.is_active, c.system_key,"
+    f" COALESCE(c.icon, '{DEFAULT_ICON}') AS icon,"
     " (SELECT COUNT(*) FROM expenses e WHERE e.category_id = c.id) AS expense_count"
     " FROM categories c"
 )
@@ -24,6 +32,12 @@ def _clean(name: str) -> str:
     if not cleaned:
         raise HTTPException(status_code=422, detail="Il nome non può essere vuoto.")
     return cleaned
+
+
+def _check_icon(icon: str) -> str:
+    if icon not in CHOOSABLE_ICONS:
+        raise HTTPException(status_code=422, detail="Icona non disponibile: scegline una dall'elenco.")
+    return icon
 
 
 def _fetch(db: sqlite3.Connection, category_id: int) -> sqlite3.Row:
@@ -57,16 +71,24 @@ def list_categories(include_inactive: bool = False, db: sqlite3.Connection = Dep
     return [dict(row) for row in rows]
 
 
+@router.get("/icons", response_model=CategoryIconsOut)
+def list_icons():
+    """The icons an expense category can have, in the order of the picker."""
+    return {"icons": list(CHOOSABLE_ICONS), "default": DEFAULT_ICON}
+
+
 @router.post("", response_model=CategoryOut, status_code=201)
 def create_category(body: CategoryCreate, db: sqlite3.Connection = Depends(get_db)):
     name = _clean(body.name)
+    icon = _check_icon(body.icon) if body.icon is not None else None
     _ensure_unique(db, name)
     next_order = db.execute(
         "SELECT COALESCE(MAX(sort_order), 0) + 10 FROM categories"
     ).fetchone()[0]
     cursor = db.execute(
-        "INSERT INTO categories (name, name_key, sort_order, created_at) VALUES (?, ?, ?, ?)",
-        (name, name.casefold(), next_order, utc_now()),
+        "INSERT INTO categories (name, name_key, sort_order, icon, created_at)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (name, name.casefold(), next_order, icon, utc_now()),
     )
     db.commit()
     return dict(_fetch(db, cursor.lastrowid))
@@ -99,7 +121,7 @@ def reorder_categories(body: CategoryOrderIn, db: sqlite3.Connection = Depends(g
 def update_category(
     category_id: int, body: CategoryUpdate, db: sqlite3.Connection = Depends(get_db)
 ):
-    """Rename, reorder, deactivate or reactivate a category.
+    """Rename, reorder, deactivate or reactivate a category, or change its icon.
 
     Deactivating hides it from the entry screen; past expenses keep it.
     The Vinted category can be renamed, not deactivated.
@@ -113,6 +135,10 @@ def update_category(
         db.execute(
             "UPDATE categories SET name = ?, name_key = ? WHERE id = ?",
             (name, name.casefold(), category_id),
+        )
+    if body.icon is not None:
+        db.execute(
+            "UPDATE categories SET icon = ? WHERE id = ?", (_check_icon(body.icon), category_id)
         )
     if body.is_active is not None:
         if not body.is_active:

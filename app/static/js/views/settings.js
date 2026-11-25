@@ -5,10 +5,11 @@ import {
   state, loadUsers, loadCategories, loadMerchants, clearState, rememberCategories,
 } from '../store.js';
 import {
-  h, icon, toast, confirmDialog, promptDialog, choiceDialog, currentMonth, todayIso, loadingBlock, errorBlock,
+  h, icon, toast, confirmDialog, promptDialog, choiceDialog, openDialog, currentMonth, todayIso, loadingBlock, errorBlock,
   passwordField, passwordProblem, newPasswordDialog, dayMonthShort,
 } from '../ui.js';
-import { copyText } from '../vinted-listing.js';
+import { copyText, canShareFiles, shareFilesWithText } from '../vinted-listing.js';
+import { categoryIcon, DEFAULT_ICON, ICON_LABELS } from '../category-icons.js';
 
 function section(title, hint, content, { open = false } = {}) {
   return h('details', { class: 'card settings-section', open },
@@ -24,6 +25,68 @@ function report(error, prefix) {
 }
 
 // --- categories -------------------------------------------------------------
+
+// The icons a category can have (GET /categories/icons), fetched once.
+let iconChoices = null;
+async function loadIconChoices() {
+  if (!iconChoices) iconChoices = (await api.get('/categories/icons')).icons;
+  return iconChoices;
+}
+
+// 0.15.0: name and icon of a category in one window, for «Aggiungi» and
+// «Modifica»; with `toggleLabel`, also «Disattiva» / «Riattiva» (out of the
+// row, where the name now shares the width with the icon). Resolves to
+// { name, icon }, { toggle: true } or null.
+function categoryDialog({ title, name = '', icon: chosen = null, icons, confirmLabel = 'Salva', toggleLabel = null }) {
+  return openDialog((finish) => {
+    let current = chosen;
+    const field = h('input', {
+      class: 'input', id: 'category-name', type: 'text', value: name, maxLength: 40, required: true,
+      autocomplete: 'off', autocapitalize: 'sentences',
+    });
+    const error = h('p', { class: 'field-error', hidden: true });
+    const grid = h('div', { class: 'icon-picker', role: 'group', 'aria-labelledby': 'category-icon-label' });
+    function draw() {
+      grid.replaceChildren(...icons.map((key) => h('button', {
+        class: `icon-choice${key === current ? ' is-selected' : ''}`,
+        type: 'button',
+        'aria-label': ICON_LABELS[key] || key,
+        'aria-pressed': String(key === current),
+        dataset: { icon: key },
+        onclick: () => { current = key; error.hidden = true; draw(); },
+      }, categoryIcon(key))));
+    }
+    draw();
+    const form = h('form', {
+      class: 'dialog-body',
+      onsubmit: (event) => {
+        event.preventDefault();
+        const text = field.value.trim().replace(/\s+/g, ' ');
+        if (!text) return;
+        if (!current) {
+          error.textContent = 'Scegli un’icona: è quella dei pulsanti in «Nuova spesa».';
+          error.hidden = false;
+          return;
+        }
+        finish({ name: text, icon: current });
+      },
+    },
+    // The title takes the focus, not the name: on a phone the keyboard would
+    // cover the icons, which are what is usually changed here.
+    h('h2', { class: 'dialog-title', tabIndex: -1, autofocus: true }, title),
+    h('label', { class: 'label', for: 'category-name' }, 'Nome'),
+    field,
+    h('span', { class: 'label', id: 'category-icon-label' }, 'Icona'),
+    grid, error,
+    toggleLabel ? h('button', {
+      class: 'btn btn-quiet btn-block category-toggle', type: 'button', onclick: () => finish({ toggle: true }),
+    }, toggleLabel) : null,
+    h('div', { class: 'dialog-actions' },
+      h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => finish(null) }, 'Annulla'),
+      h('button', { class: 'btn btn-primary', type: 'submit' }, confirmLabel)));
+    return form;
+  });
+}
 
 function categoriesSection() {
   const list = h('ul', { class: 'manage-list' });
@@ -54,6 +117,7 @@ function categoriesSection() {
     orderHint.hidden = !reordering;
     if (reordering) {
       list.replaceChildren(...categories.map((category, index) => h('li', { class: 'manage-item' },
+        categoryIcon(category.icon || DEFAULT_ICON),
         h('span', { class: 'manage-name' },
           category.name,
           category.is_active ? null : h('span', { class: 'tag' }, 'disattivata')),
@@ -68,18 +132,15 @@ function categoriesSection() {
           }, icon('down'))))));
       return;
     }
-    // The Vinted category (0.8.0) can be renamed, never deactivated: the
-    // section of the same name relies on it.
+    // 0.15.0: one action, «Modifica» (name, icon, and «Disattiva» inside).
     list.replaceChildren(...categories.map((category) => h('li', { class: 'manage-item' },
+      categoryIcon(category.icon || DEFAULT_ICON),
       h('span', { class: 'manage-name' },
         category.name,
         category.is_active ? null : h('span', { class: 'tag' }, 'disattivata'),
         category.system_key === 'vinted' ? h('span', { class: 'tag' }, 'usata dalla sezione Vinted') : null),
       h('span', { class: 'manage-actions' },
-        h('button', { class: 'btn-text', type: 'button', onclick: () => rename(category) }, 'Rinomina'),
-        category.system_key ? null : h('button', {
-          class: 'btn-text', type: 'button', onclick: () => toggle(category),
-        }, category.is_active ? 'Disattiva' : 'Riattiva')))));
+        h('button', { class: 'btn-text', type: 'button', onclick: () => edit(category) }, 'Modifica')))));
   }
 
   // One request with the whole new order (PUT /categories/order): two
@@ -101,14 +162,26 @@ function categoriesSection() {
     }
   }
 
-  async function rename(category) {
-    const name = await promptDialog({ title: 'Rinomina categoria', label: 'Nome', value: category.name });
-    if (name === null || name === category.name) return;
+  // 0.15.0: name and icon («Rinomina» until 0.14.0).
+  async function edit(category) {
+    let icons;
+    try { icons = await loadIconChoices(); } catch (error) { report(error, 'Icone non caricate'); return; }
+    const answer = await categoryDialog({
+      title: 'Modifica categoria', name: category.name, icon: category.icon || DEFAULT_ICON, icons,
+      // The Vinted category (0.8.0) is never deactivated: its section relies on it.
+      toggleLabel: category.system_key ? null : category.is_active ? 'Disattiva categoria' : 'Riattiva categoria',
+    });
+    if (!answer) return;
+    if (answer.toggle) { await toggle(category); return; }
+    const changes = {};
+    if (answer.name !== category.name) changes.name = answer.name;
+    if (answer.icon !== category.icon) changes.icon = answer.icon;
+    if (!Object.keys(changes).length) return;
     try {
-      await api.patch(`/categories/${category.id}`, { name });
+      await api.patch(`/categories/${category.id}`, changes);
       await refresh();
-      toast('Categoria rinominata.', { kind: 'success' });
-    } catch (error) { report(error, 'Non rinominata'); }
+      toast('Categoria modificata.', { kind: 'success' });
+    } catch (error) { report(error, 'Non modificata'); }
   }
 
   async function toggle(category) {
@@ -130,10 +203,15 @@ function categoriesSection() {
     class: 'inline-form',
     onsubmit: async (event) => {
       event.preventDefault();
-      const name = nameInput.value.trim();
-      if (!name) return;
+      const typed = nameInput.value.trim();
+      if (!typed) return;
+      // 0.15.0: then the icon, in the same window as «Modifica».
+      let icons;
+      try { icons = await loadIconChoices(); } catch (error) { report(error, 'Icone non caricate'); return; }
+      const answer = await categoryDialog({ title: 'Nuova categoria', name: typed, icons, confirmLabel: 'Aggiungi' });
+      if (!answer) return;
       try {
-        await api.post('/categories', { name });
+        await api.post('/categories', answer);
         nameInput.value = '';
         await refresh();
         toast('Categoria aggiunta.', { kind: 'success' });
@@ -296,6 +374,25 @@ function merchantsSection() {
 
 // --- CSV export -------------------------------------------------------------
 
+// 0.15.0: every export can be downloaded or shared. «Condividi» copies the
+// text that goes with the files (GET /export/brief: what they hold, the
+// totals to check them against, the rules of the app) and opens the share
+// sheet with the files; «Scarica» saves them, and its confirmation offers
+// to copy the same text. «Tutto» (until 0.14.0 «Per Claude») is spese,
+// entrate and articoli Vinted together.
+const EXPORT_KINDS = {
+  expenses: { empty: 'Nel periodo non ci sono spese.' },
+  incomes: { empty: 'Nel periodo non ci sono entrate.' },
+  vinted: { empty: 'Non ci sono articoli Vinted.', allItems: true },
+  all: { empty: 'Nel periodo non ci sono spese né entrate, e non ci sono articoli Vinted.' },
+};
+
+// Whether the "Condividi" button makes sense here: Chrome on Android in
+// HTTPS (the Tailscale address) shares CSV files; plain HTTP does not.
+function shareAvailable() {
+  return canShareFiles([new File(['data'], 'prova.csv', { type: 'text/csv' })]);
+}
+
 function exportSection() {
   const month = h('input', {
     class: 'input', id: 'export-month', type: 'month', value: currentMonth(), max: currentMonth(),
@@ -310,16 +407,6 @@ function exportSection() {
   let what = 'expenses';
   let period = 'month';
   let format = 'standard';
-  // Separate files: the expense CSV keeps its usual columns. The Vinted
-  // items are all exported, with no period: they live for months.
-  // "Per Claude" (0.14.0): the expense and income files of the period, in
-  // the standard format, plus a text to paste with them (claudePackage).
-  const EXPORTS = {
-    expenses: { path: '/export.csv', fallbackName: 'spese.csv' },
-    incomes: { path: '/export/incomes.csv', fallbackName: 'entrate.csv' },
-    vinted: { path: '/export/vinted.csv', fallbackName: 'vinted_articoli.csv', allItems: true },
-    claude: { path: '/export/brief', package: true },
-  };
   const periodBlock = h('div', {});
   function choice(name, options, onPick) {
     return h('div', { class: 'radio-list' }, options.map((option, index) => h('label', { class: 'radio' },
@@ -344,31 +431,67 @@ function exportSection() {
     }),
     monthFields, rangeFields);
 
-  const button = h('button', {
-    class: 'btn btn-primary btn-block', type: 'button',
-    onclick: async () => {
-      const query = new URLSearchParams({ format });
-      if (!EXPORTS[what].allItems && period === 'month') {
-        if (!month.value) { toast('Scegli un mese.', { kind: 'error' }); return; }
-        query.set('month', month.value);
-      } else if (!EXPORTS[what].allItems) {
-        if (!from.value || !to.value) { toast('Indica entrambe le date.', { kind: 'error' }); return; }
-        if (from.value > to.value) { toast('La data iniziale viene dopo quella finale.', { kind: 'error' }); return; }
-        query.set('from', from.value);
-        query.set('to', to.value);
+  // The query of GET /export/brief, or null after telling what is missing.
+  function briefQuery() {
+    const query = new URLSearchParams({ what, format });
+    if (EXPORT_KINDS[what].allItems) return query;
+    if (period === 'month') {
+      if (!month.value) { toast('Scegli un mese.', { kind: 'error' }); return null; }
+      query.set('month', month.value);
+    } else {
+      if (!from.value || !to.value) { toast('Indica entrambe le date.', { kind: 'error' }); return null; }
+      if (from.value > to.value) { toast('La data iniziale viene dopo quella finale.', { kind: 'error' }); return null; }
+      query.set('from', from.value);
+      query.set('to', to.value);
+    }
+    return query;
+  }
+
+  async function withBrief(button, run) {
+    const query = briefQuery();
+    if (!query) return;
+    buttons.forEach((each) => { each.disabled = true; });
+    try {
+      const brief = await api.get(`/export/brief?${query}`);
+      if (!brief.files.length) toast(EXPORT_KINDS[what].empty, { kind: 'error' });
+      else await run(brief);
+    } catch (error) { report(error, 'Export non riuscito'); }
+    buttons.forEach((each) => { each.disabled = false; });
+  }
+
+  const apiPath = (url) => url.replace(/^\/api\/v1/, '');
+
+  const downloadButton = h('button', {
+    class: 'btn btn-primary btn-grow', type: 'button',
+    onclick: () => withBrief(downloadButton, async (brief) => {
+      for (const file of brief.files) await api.download(apiPath(file.url), file.name);
+      const many = brief.files.length > 1;
+      toast(many ? `${brief.files.length} file scaricati.` : 'File scaricato.', {
+        kind: 'success',
+        duration: 8000,
+        action: { label: 'Copia testo', run: () => copyText(brief.text, 'Testo copiato: incollalo con i file.') },
+      });
+    }),
+  }, icon('download'), h('span', {}, 'Scarica'));
+
+  const shareButton = h('button', {
+    class: 'btn btn-quiet btn-grow', type: 'button', hidden: !shareAvailable(),
+    onclick: () => withBrief(shareButton, async (brief) => {
+      const files = [];
+      for (const file of brief.files) {
+        const blob = await api.blob(apiPath(file.url));
+        files.push(new File([blob], file.name, { type: 'text/csv' }));
       }
-      button.disabled = true;
-      try {
-        if (EXPORTS[what].package) {
-          query.delete('format');
-          await claudePackage(query);
-        } else {
-          await api.download(`${EXPORTS[what].path}?${query}`, EXPORTS[what].fallbackName);
-        }
-      } catch (error) { report(error, 'Export non riuscito'); }
-      button.disabled = false;
-    },
-  }, 'Scarica CSV');
+      await shareFilesWithText(files, brief.text);
+    }),
+  }, icon('share'), h('span', {}, 'Condividi'));
+  const buttons = [downloadButton, shareButton];
+
+  const shareHint = h('p', { class: 'settings-text export-share-hint' },
+    shareAvailable()
+      ? '«Condividi» copia il testo che accompagna i file e apre il menu di Android: scegli Claude, Drive o un’altra app, allega i file e incolla il testo.'
+      : '«Condividi» c’è sul telefono, dall’indirizzo di Tailscale. Qui i file si scaricano; dalla conferma puoi copiare il testo che li accompagna.');
+
   const formatBlock = h('div', {},
     h('span', { class: 'label' }, 'Formato'),
     choice('export-format', [
@@ -387,36 +510,18 @@ function exportSection() {
         hint: 'Tutti gli articoli: acquisto, vendita, guadagno, giorni in vendita, prezzi dell’annuncio.',
       },
       {
-        value: 'claude',
-        label: 'Per Claude',
-        hint: 'Spese ed entrate del periodo in formato standard, più un testo da incollare con i totali per il controllo e le regole dell’app.',
+        value: 'all',
+        label: 'Tutto',
+        hint: 'Spese ed entrate del periodo e tutti gli articoli Vinted, in file separati, con un testo che riassume i totali.',
       },
     ], (value) => {
       what = value;
-      periodBlock.hidden = Boolean(EXPORTS[value].allItems);
-      formatBlock.hidden = Boolean(EXPORTS[value].package);
-      button.textContent = EXPORTS[value].package ? 'Scarica i file e copia il testo' : 'Scarica CSV';
+      periodBlock.hidden = Boolean(EXPORT_KINDS[value].allItems);
     }),
     periodBlock,
     formatBlock,
-    button);
-}
-
-// "Per Claude" (0.14.0): the files of the period and the text that goes with
-// them. The app sends nothing anywhere: it downloads the files and copies
-// the text; in Claude, a new chat of the project, the files attached and
-// the text pasted.
-async function claudePackage(query) {
-  const brief = await api.get(`/export/brief?${query}`);
-  if (!brief.files.length) {
-    toast('Nel periodo non ci sono spese né entrate.', { kind: 'error' });
-    return;
-  }
-  for (const file of brief.files) {
-    await api.download(file.url.replace(/^\/api\/v1/, ''), file.name);
-  }
-  const files = brief.files.length === 1 ? 'il file' : `i ${brief.files.length} file`;
-  await copyText(brief.text, `File scaricati e testo copiato: in Claude allega ${files} e incolla il testo.`);
+    h('div', { class: 'export-actions' }, downloadButton, shareButton),
+    shareHint);
 }
 
 // --- backup and restore -------------------------------------------------------
@@ -637,7 +742,7 @@ export async function mount(root, ctx) {
       h('span', { class: 'settings-go', 'aria-hidden': 'true' }, '›')),
     section('Categorie', 'Aggiungi, rinomina, riordina, disattiva', categories.element),
     section('Esercenti', 'Cerca, rinomina, unisci i doppioni', merchants.element),
-    section('Esporta CSV', 'Spese, entrate, articoli Vinted o per Claude', exportSection()),
+    section('Esporta CSV', 'Spese, entrate, articoli Vinted o tutto: da scaricare o condividere', exportSection()),
     section('Backup e ripristino', 'Scarica, ricarica, copie automatiche', backupSection()),
     section('Account', 'Password, uscita', accountSection(users, ctx.navigate)),
     version);
