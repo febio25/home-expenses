@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import sqlite3
 from collections.abc import Iterable
 from datetime import date
@@ -17,7 +18,9 @@ from fastapi import APIRouter, Depends, Query, Response
 from .. import dates
 from ..dates import range_filter, resolve_range
 from ..db import get_db
+from ..export_brief import build_brief, period_text
 from ..money import format_cents
+from ..schemas import INCOME_CATEGORIES, ExportBriefOut
 from ..security import current_user
 from .expenses import EXPENSE_SELECT
 from .incomes import INCOME_SELECT, income_out
@@ -79,9 +82,29 @@ PAYMENT_LABELS = {"card": "Carta", "cash": "Contanti", "other": "Altro"}
 Flavour = Literal["standard", "excel_it"]
 
 
+# A cell that starts with one of these is read by Excel as a formula:
+# "-10% saldi" becomes #NOME?, "+ spedizione" an error. Tab and carriage
+# return are on the list for the same reason (OWASP, "CSV Injection").
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+# Amounts the app writes itself (a Vinted gain can be "-5,00"): numbers,
+# never text to protect.
+EXCEL_NUMBER = re.compile(r"-?\d+(,\d+)?")
+
+
+def excel_text(cell: str) -> str:
+    """A cell of the Excel flavour, safe to open (0.14.0): text that Excel
+    would take for a formula gets a leading apostrophe, Excel's own mark
+    for "this is text", which Excel does not show in the cell. Numbers stay
+    numbers. The standard flavour, the one for AI tools, is never touched."""
+    if cell.startswith(FORMULA_START) and not EXCEL_NUMBER.fullmatch(cell):
+        return "'" + cell
+    return cell
+
+
 def _render(header: list[str], records: Iterable[list[str]], excel: bool) -> str:
     """standard: comma separator, dot decimal. For AI tools and scripts.
-    excel_it: semicolon separator, comma decimal, as Italian Excel expects."""
+    excel_it: semicolon separator, comma decimal, as Italian Excel expects,
+    and text cells that look like formulas protected (``excel_text``)."""
     buffer = io.StringIO()
     writer = csv.writer(
         buffer,
@@ -90,6 +113,8 @@ def _render(header: list[str], records: Iterable[list[str]], excel: bool) -> str
         lineterminator="\r\n",
     )
     writer.writerow(header)
+    if excel:
+        records = ([excel_text(cell) for cell in record] for record in records)
     writer.writerows(records)
     return buffer.getvalue()
 
@@ -284,3 +309,70 @@ def export_vinted_csv(
         excel,
         f"vinted_articoli{'_excel' if excel else ''}.csv",
     )
+
+
+@router.get("/export/brief", response_model=ExportBriefOut)
+def export_brief(
+    month: str | None = Query(None, description="YYYY-MM; wins over from/to"),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """The CSV files of a period for an AI assistant, and the text to send
+    with them (0.14.0): what they hold, the totals to check them against,
+    the conventions of the app. The files are the standard flavour of
+    GET /export.csv and GET /export/incomes.csv; a file with no rows is left
+    out. Nothing is sent anywhere: the app downloads the files and copies
+    the text."""
+    start, end = resolve_range(month, date_from, date_to)
+    window: dict[str, str] = {}
+    if month:
+        window["month"] = month
+    else:
+        if start:
+            window["from"] = start.isoformat()
+        if end:
+            window["to"] = end.isoformat()
+    where, params = range_filter(start, end, column="expense_date")
+    future = dates.today().isoformat()
+    spent = db.execute(
+        "SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS cents,"
+        "       COALESCE(SUM(expense_date > ?), 0) AS planned_count,"
+        "       COALESCE(SUM(CASE WHEN expense_date > ? THEN amount_cents END), 0) AS planned_cents"
+        f"  FROM expenses{where}",
+        [future, future, *params],
+    ).fetchone()
+    where, params = range_filter(start, end, column="income_date")
+    income = db.execute(
+        "SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS cents,"
+        "       COALESCE(SUM(CASE WHEN category = 'meal_voucher' THEN amount_cents END), 0) AS vouchers"
+        f"  FROM incomes{where}",
+        params,
+    ).fetchone()
+    vinted = db.execute("SELECT name FROM categories WHERE system_key = 'vinted'").fetchone()
+
+    query = "&".join(f"{key}={value}" for key, value in {**window, "format": "standard"}.items())
+    files = []
+    expense_file = income_file = None
+    if spent["count"]:
+        expense_file = _filename("spese", month, start, end, False)
+        files.append({"name": expense_file, "url": f"/api/v1/export.csv?{query}"})
+    if income["count"]:
+        income_file = _filename("entrate", month, start, end, False)
+        files.append({"name": income_file, "url": f"/api/v1/export/incomes.csv?{query}"})
+    text = build_brief(
+        period=period_text(month, start, end),
+        expense_file=expense_file,
+        expense_count=spent["count"],
+        expense_cents=spent["cents"],
+        planned_count=spent["planned_count"],
+        planned_cents=spent["planned_cents"],
+        income_file=income_file,
+        income_count=income["count"],
+        income_cents=income["cents"],
+        voucher_cents=income["vouchers"],
+        vinted_category=vinted["name"] if vinted else None,
+        vinted_income_category=INCOME_CATEGORIES["vinted"],
+        voucher_category=INCOME_CATEGORIES["meal_voucher"],
+    )
+    return {"text": text, "files": files}

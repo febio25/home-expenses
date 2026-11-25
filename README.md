@@ -10,6 +10,20 @@ esposta su internet.
 ## Cosa fa
 
 - Inserimento rapido: importo, esercente (con suggerimenti), categoria, Salva.
+  I suggerimenti degli esercenti seguono l'uso degli ultimi 90 giorni (dalla
+  0.14.0); l'ordine dei pulsanti delle categorie si cambia in *Impostazioni →
+  Categorie → Cambia l'ordine*.
+- Avvio immediato (dalla 0.14.0): utenti, categorie ed esercenti restano
+  salvati sul telefono, quindi la schermata di inserimento compare subito,
+  anche con Tailscale lento o spento, e l'importo si può scrivere; per
+  salvare serve comunque il server (senza rete compare l'errore di sempre e
+  i dati restano nel modulo). Le liste si aggiornano da sole appena il
+  server risponde.
+- Possibili doppioni (dalla 0.14.0): se esiste già una spesa con lo stesso
+  importo, lo stesso giorno e lo stesso esercente (senza esercente: la
+  stessa categoria), inserita da chiunque, la spesa si salva comunque e
+  l'avviso diventa arancione, «Salvata, ma sembra un doppione: Nastia ha già
+  registrato la stessa spesa alle 18:02», con il solito «Annulla».
 - Data, «pagato da», metodo di pagamento e nota hanno valori predefiniti
   (oggi, chi è collegato, carta) e si cambiano con un tocco.
 - Spese con data futura (dalla 0.12.0): una domiciliazione o una spesa già
@@ -26,7 +40,9 @@ esposta su internet.
   categoria, importo («12,50») e titolo dell'articolo Vinted collegato (per
   le entrate: categoria, nota, importo e articolo). I risultati sono
   raggruppati per mese, con totale e numero; una spesa si apre come sempre e
-  Indietro torna ai risultati. La × torna alla lista del mese.
+  Indietro torna ai risultati. La × torna alla lista del mese. Dalla 0.14.0
+  i risultati arrivano 100 alla volta («Mostra altre 100» in fondo), mentre
+  i totali in cima e quelli di ogni mese contano sempre tutti i risultati.
 - Entrate (stipendi, rimborsi, regali, vendite, buoni pasto), separate dalle
   spese: in *Movimenti* l'interruttore «Spese | Entrate» passa da una lista
   all'altra, e «Nuova entrata» le registra con importo, categoria da una
@@ -36,7 +52,10 @@ esposta su internet.
   affiancate e la differenza sotto ogni mese, poi grafico a ciambella e totale
   per categoria. Toccando una categoria si vedono le spese che la compongono;
   toccando *Entrate* si vedono le entrate del mese per categoria (ciambella e
-  totali) e la loro lista.
+  totali) e la loro lista. Dalla 0.14.0, se nel mese ci sono entrate
+  ricorrenti non ancora registrate (lo stipendio di fine mese), la riga
+  *Attese* le elenca e la *Differenza* le conta, con sotto quella «finora»:
+  prima dello stipendio il mese non sembra più in forte perdita.
 - *Esplora* (dalla 0.9.0), dal link sotto l'istogramma: i totali di un mese,
   di un anno, degli ultimi 6 mesi o di due date a scelta, con le frecce per
   andare avanti e indietro. Solo totali (entrate, spese con i buoni pasto in
@@ -89,8 +108,11 @@ esposta su internet.
   La categoria *Vinted* serve alla sezione: si può rinominare ma non
   disattivare né eliminare.
 - Export CSV per mese o intervallo, in due formati: un file per le spese e
-  uno per le entrate; più un file con tutti gli articoli Vinted.
-- Backup e ripristino dell'intero database, foto degli articoli comprese.
+  uno per le entrate; più un file con tutti gli articoli Vinted. Dalla 0.14.0
+  anche *Per Claude*: vedi [Export CSV](#export-csv).
+- Backup e ripristino dell'intero database, foto degli articoli comprese;
+  dalla 0.14.0 anche copie automatiche sull'Umbrel (vedi [Backup e
+  ripristino](#backup-e-ripristino)).
 - Due utenti con password propria, stessi dati per entrambi.
 
 Nessuna chiamata esterna: niente CDN, font o telemetria. Tutto è servito dal
@@ -416,6 +438,14 @@ era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
 
+Dalla 0.13.0 alla 0.14.0 il database non cambia (schema invariato): tornare
+alla 0.13.0 resta possibile. Al primo avvio le copie lasciate dai ripristini
+(`pre-restore-*.db`) passano nella cartella `snapshots` della cartella dati,
+dove da ora finiscono anche le copie automatiche. La prima copia del giorno
+si fa all'avvio (o entro un'ora, su un'installazione nuova appena configurata).
+Dalla 0.14.0, prima di applicare un aggiornamento che cambia il database,
+l'app ne salva una copia (*Prima di un aggiornamento*).
+
 Dalla 0.12.0 alla 0.13.0 il database non cambia (solo l'interfaccia della
 scheda Vinted). Dalla 0.11.0 alla 0.12.0 il database non cambia (schema invariato): cambiano
 solo le regole sulla data delle spese. Un backup della 0.12.0 si ripristina
@@ -455,16 +485,34 @@ docker compose up -d --build
   1200 pixel sul lato lungo (JPEG, al massimo 3 MB l'una) più una miniatura:
   il backup cresce con il numero di foto. Il ripristino accetta file fino a
   512 MB.
+- **Ultimo backup scaricato** (dalla 0.14.0): sotto il testo della sezione,
+  data, ora e chi l'ha scaricato (vale per entrambi i telefoni). In rosso se
+  manca o ha più di 30 giorni. Il file prende il nome con l'ora del
+  telefono.
 - **Ripristino:** stessa schermata, *Ripristina da file…*. Sostituisce tutti i
   dati con quelli del file, utenti e password compresi. L'app controlla che il
   file sia un backup integro prima di toccare qualcosa e salva una copia dei
-  dati sostituiti nella cartella dati (`pre-restore-*.db`, ultime 3).
+  dati sostituiti (*Prima di un ripristino*, ultime 3).
+- **Copie automatiche sull'Umbrel** (dalla 0.14.0), nella cartella
+  `snapshots` della cartella dati: una al giorno (le ultime 7), una prima di
+  ogni aggiornamento che cambia il database (ultime 3) e una prima di ogni
+  ripristino (ultime 3). Sono fatte con l'API di backup di SQLite, quindi
+  coerenti anche mentre l'app scrive. Compaiono in fondo alla sezione con
+  data, tipo e dimensione, ognuna con «Ripristina» (stessi controlli del
+  ripristino da file; i dati sostituiti diventano a loro volta una copia,
+  quindi un ripristino sbagliato si annulla allo stesso modo). Proteggono da
+  errori, ripristini sbagliati e aggiornamenti andati male, **non** da un
+  guasto del disco dell'Umbrel: per quello serve il backup scaricato o i
+  Backup di umbrelOS. Occupano spazio: con molte foto Vinted ogni copia pesa
+  quanto il database.
 - Dopo un ripristino valgono utenti e sessioni del backup: può essere
   necessario accedere di nuovo.
-- **Backup di Umbrel:** se li attivi in umbrelOS, includono anche la cartella
-  dati dell'app (`spese.db`). Il backup dall'app resta il modo più semplice
-  per avere una copia da conservare altrove o da ripristinare su un'altra
-  installazione.
+- **Backup di umbrelOS:** da *Settings → Backups* umbrelOS fa backup
+  automatici cifrati (ogni ora) verso un altro Umbrel, un NAS o un disco
+  USB (fonte: guida Umbrel «Backing up your data»). Includono la cartella
+  dati dell'app, quindi anche le copie automatiche, che sono coerenti per
+  costruzione. Il backup dall'app resta il modo più semplice per avere una
+  copia da conservare altrove o da ripristinare su un'altra installazione.
 
 Per una nuova installazione: completa il primo avvio con password provvisorie,
 poi ripristina il backup.
@@ -566,6 +614,29 @@ Colonne: `data` (AAAA-MM-GG), `importo`, `categoria`, `esercente`, `nota`,
 | Excel italiano | punto e virgola | virgola (`12,50`) | UTF-8 con BOM | doppio clic in Excel |
 
 L'esercente è facoltativo: se manca, la colonna resta vuota.
+
+Nella variante *Excel italiano*, dalla 0.14.0, un esercente o una nota che
+inizia con `=`, `+`, `-` o `@` (per esempio «-10% saldi») prende un
+apostrofo davanti: per Excel è il segno «questo è testo» e nella cella non
+si vede. Senza, Excel lo leggerebbe come una formula (`#NOME?`). Gli importi
+restano numeri e il formato *Standard*, quello per l'AI, non cambia mai.
+
+### Per Claude (dalla 0.14.0)
+
+Stessa schermata, scegliendo *Per Claude*, con un mese o un intervallo:
+l'app scarica i CSV standard di spese ed entrate del periodo (un file senza
+righe viene saltato) e copia negli appunti un breve testo da incollare con
+i file. Il testo dice cosa contengono, numero di righe e totali (spese,
+entrate, buoni pasto, differenza) da usare come controllo, e le convenzioni
+dell'app che le colonne da sole non dicono: buoni pasto come entrata e
+acquisti fatti con i buoni tra le spese, categoria *Vinted*, spese con data
+futura (previste).
+
+Poi, in Claude: una chat nuova nel progetto delle analisi, allega i file
+dalla cartella Download e incolla il testo. L'app non manda nulla a nessuno.
+La prima volta Chrome può chiedere il permesso di scaricare più file
+(«Consenti»). Se gli appunti non sono disponibili compare una finestra con
+il testo da copiare a mano.
 
 ### Entrate
 
@@ -785,6 +856,27 @@ CDN.
   `reason_name` in italiano; prima l'esercente con più spese), `POST
   /api/v1/merchants/{id}/distinct` con `{other_id}` («Non sono doppioni») e
   `DELETE /api/v1/merchants/{id}/distinct/{other_id}` (annulla).
+- Dalla 0.14.0:
+  - `GET /api/v1/expenses` e `GET /api/v1/incomes` accettano `limit` (da 1 a
+    500) e `offset`: una pagina della lista. `GET
+    /api/v1/summary/search/expenses?q=…` e `/summary/search/incomes?q=…`
+    restituiscono numero e totale di tutti i risultati di una ricerca, anche
+    mese per mese (`count`, `total_cents`, `months`).
+  - `POST /api/v1/expenses` restituisce anche `possible_duplicates`: le
+    spese con lo stesso importo e lo stesso giorno, dello stesso esercente
+    (senza esercente: della stessa categoria). La spesa è salvata comunque.
+  - `GET /api/v1/merchants`: ogni esercente ha `recent_count` (spese degli
+    ultimi 90 giorni) e la lista è ordinata prima per quello.
+  - `PUT /api/v1/categories/order` con `{ids: [...]}`: tutte le categorie,
+    attive e no, nel nuovo ordine (409 se l'elenco non corrisponde).
+  - `GET /api/v1/summary?month=…` ha anche `expected_income_cents` ed
+    `expected_incomes`: le entrate ricorrenti attive con la prossima
+    scadenza nel mese, non ancora registrate.
+  - `GET /api/v1/backups` (`last_download` e `copies`, le copie sul server
+    dalla più recente) e `POST /api/v1/backups/{name}/restore`.
+  - `GET /api/v1/export/brief` (filtri `month`, oppure `from` e `to`):
+    `files` (nome e indirizzo dei CSV standard del periodo) e `text` (il
+    testo da mandare con i file a un assistente AI).
 
 ## Sviluppo
 
@@ -795,9 +887,23 @@ pip install -r requirements-dev.txt
 # avvio senza Docker
 SPESE_DATA_DIR=./data SPESE_COOKIE_SECURE=auto uvicorn app.main:app --reload --port 8080
 
-# test
+# test del server
 pytest
+
+# test dell'interfaccia (dalla 0.14.0): Chrome a misura di telefono
+python -m playwright install chromium
+pytest tests_ui
 ```
+
+I test dell'interfaccia (`tests_ui/`) avviano l'app su una porta libera con
+una cartella dati vuota e la usano in Chrome a 360 e 320 pixel: inserimento
+e «Annulla», apertura senza rete, doppioni, ricerca a pagine, entrate
+attese, ordine delle categorie, backup, export per Claude, filtro iniziale
+di Vinted, schermate principali senza elementi fuori schermo né errori in
+console. Il workflow di rilascio li esegue insieme ai test del server prima
+di pubblicare l'immagine. Per usare un Chrome già installato:
+`SPESE_UI_CHROME=/percorso/di/chrome pytest tests_ui`. Playwright è una
+dipendenza solo di sviluppo: non entra nell'immagine.
 
 Le icone si rigenerano con `python scripts/make_icons.py`.
 
@@ -810,6 +916,9 @@ app/
   db.py            connessioni SQLite e migrazioni
   security.py      password (scrypt), sessioni, autenticazione
   money.py         conversione degli importi in centesimi
+  validation.py    controlli comuni (importo, categoria, utente, nota)
+  copies.py        copie automatiche del database e ultimo backup scaricato
+  export_brief.py  testo da mandare con i CSV a un assistente AI
   text.py          ricerca: testo senza maiuscole e accenti
   vinted_listing.py  annunci Vinted: richiesta per Claude e lettura della risposta
   merchant_duplicates.py  possibili doppioni tra gli esercenti
@@ -821,7 +930,8 @@ app/
                    recurring_incomes, categories, merchants, summary,
                    vinted, export, backup
   static/          frontend (HTML, CSS, JavaScript, manifest, service worker)
-tests/             test automatici (pytest)
+tests/             test automatici del server (pytest)
+tests_ui/          test dell'interfaccia in Chrome (Playwright)
 skills/            skill «annunci-vinted» da caricare su claude.ai
 scripts/           generazione delle icone
 .github/workflows/ pubblicazione dell'immagine su GHCR (release.yml)

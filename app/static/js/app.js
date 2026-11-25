@@ -1,7 +1,9 @@
 // App shell: boot, routing, bottom navigation, service worker registration.
 
 import { api } from './api.js';
-import { state, loadMe, clearState, invalidateLists } from './store.js';
+import {
+  state, loadMe, clearState, invalidateLists, hydrate, refreshLists,
+} from './store.js';
 import { h, icon, errorBlock, placeToasts } from './ui.js';
 import { handleOverlayPop } from './overlay.js';
 import * as loginView from './views/login.js';
@@ -133,7 +135,15 @@ async function render() {
 }
 
 // Decide where to start: the app, the login screen, or first-run setup.
+// 0.14.0: with the lists of the last session on the phone the app opens at
+// once, before any answer from the server; the session and the lists are
+// checked in the background (checkSession).
 async function boot() {
+  if (hydrate()) {
+    checkSession();
+    await render();
+    return;
+  }
   try {
     await loadMe();
   } catch (error) {
@@ -153,6 +163,19 @@ async function boot() {
     if (location.pathname !== target) history.replaceState(null, '', target);
   }
   await render();
+}
+
+async function checkSession() {
+  try {
+    await loadMe();
+  } catch (error) {
+    if (error.status === 401) { // signed out or expired meanwhile
+      clearState();
+      navigate('/login', { replace: true });
+    }
+    return; // no network: keep going with what is on the phone
+  }
+  refreshLists().catch(() => { /* the lists of last time stay */ });
 }
 
 // In-app links: <a data-link href="/movimenti">

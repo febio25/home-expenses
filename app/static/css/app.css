@@ -807,3 +807,35 @@ dialog.viewer::backdrop { background: rgb(20 37 31 / 0.6); }
 .details-list dd { margin: 0; overflow-wrap: anywhere; }
 .details-edit { padding: 4px 14px 8px; }
 .listing-card .details-box + .info, .listing-card .info + .details-box { border-top: 1px solid var(--line); }
+
+/* --- 0.14.0 ------------------------------------------------------------------ */
+
+/* "Caricamento…" only when the wait is long enough to notice: a screen that
+   answers within a third of a second appears without the flash. */
+@keyframes boot-late { from { visibility: hidden; } to { visibility: visible; } }
+.boot { animation: boot-late 0s linear 0.3s both; }
+
+/* "Salvata, ma sembra un doppione": orange, apart from the yellow of a
+   plain confirmation; dark text (contrast about 6:1). */
+.toast-warning { background: #F08A24; color: var(--ink); font-weight: 650; }
+
+/* Search results a page at a time. */
+.search-more { margin-top: 12px; }
+
+/* "Attese" in the summary: money still to come, in the muted ink. */
+.balance-expected .balance-amount { color: var(--muted); font-weight: 650; }
+
+/* Impostazioni → Backup: the last download, highlighted when it is old or
+   missing; the copies kept by the server under their own heading. */
+.backup-last { color: var(--ink); }
+.backup-last.is-old { color: var(--danger); font-weight: 600; }
+.settings-subtitle { margin: 18px 0 0; font-size: 1rem; }
+
+/* Impostazioni → Categorie → «Cambia l'ordine»: two arrows per row. */
+.order-actions { gap: 6px; }
+.order-step {
+  width: var(--tap); height: var(--tap); display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--primary);
+}
+.order-step:disabled { color: var(--line); }
+.order-step:active:not(:disabled) { background: var(--primary-soft); }

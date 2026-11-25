@@ -52,7 +52,8 @@ from ..schemas import (
     VintedSummaryOut,
 )
 from ..security import current_user
-from .expenses import EXPENSE_SELECT, _amount, _clean_note, insert_expense
+from ..validation import clean_note, require_amount
+from .expenses import EXPENSE_SELECT, insert_expense
 from .incomes import INCOME_SELECT, income_out, insert_income
 from .merchants import prune_merchant
 from .summary import trend_skeleton
@@ -246,7 +247,7 @@ def _clean_text(text: str | None) -> str | None:
 def _optional_amount(text: str | None) -> int | None:
     if text is None or not text.strip():
         return None
-    return _amount(text)
+    return require_amount(text)
 
 
 def listing_changes(body: VintedListingIn, sent: set[str]) -> dict[str, object]:
@@ -476,7 +477,7 @@ def create_item(
     columns = {
         "client_uuid": body.client_uuid,
         "title": title,
-        "note": _clean_note(body.note),
+        "note": clean_note(body.note),
         "listed_on": listed_on,
         "purchase_expense_id": expense_id,
         "created_by_user_id": user["id"],
@@ -533,7 +534,7 @@ def update_item(
     if "title" in sent:
         changes["title"] = _clean_title(body.title)
     if "note" in sent:
-        changes["note"] = _clean_note(body.note)
+        changes["note"] = clean_note(body.note)
     if "listed_on" in sent:
         if body.listed_on is not None:
             linked = db.execute(

@@ -16,6 +16,8 @@ def test_create_and_read(client, categories):
     assert expense["payment_method"] == "card"
     assert expense["expense_date"] == "2026-11-13"
 
+    # 0.14.0: the answer of POST also lists the expenses that look alike.
+    assert expense.pop("possible_duplicates") == []
     fetched = client.get(f"{API}/expenses/{expense['id']}").json()
     assert fetched == expense
 

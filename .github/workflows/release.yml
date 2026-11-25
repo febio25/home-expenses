@@ -33,8 +33,29 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+  # 0.14.0: the main flows in a phone-sized Chrome (tests_ui), against the
+  # app started for real. Playwright downloads its own Chromium here; the
+  # runner is pinned to an Ubuntu release Playwright lists as supported.
+  ui-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Install Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run interface tests
+        run: pytest -q tests_ui
+
   publish:
-    needs: test
+    needs: [test, ui-test]
     runs-on: ubuntu-latest
     permissions:
       contents: read

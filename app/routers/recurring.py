@@ -25,7 +25,8 @@ from ..schemas import (
     RecurringUpdate,
 )
 from ..security import current_user
-from .expenses import _amount, _check_category, _check_user, _clean_note, fetch_expense, insert_expense
+from ..validation import check_category, check_user, clean_note, require_amount
+from .expenses import fetch_expense, insert_expense
 from .merchants import clean_merchant_name
 
 router = APIRouter(prefix="/recurring", tags=["recurring"], dependencies=[Depends(current_user)])
@@ -85,10 +86,10 @@ def create_recurring(
     user: sqlite3.Row = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    amount_cents = _amount(body.amount)
-    _check_category(db, body.category_id, must_be_active=True)
+    amount_cents = require_amount(body.amount)
+    check_category(db, body.category_id, must_be_active=True)
     paid_by = body.paid_by_user_id if body.paid_by_user_id is not None else user["id"]
-    _check_user(db, paid_by)
+    check_user(db, paid_by)
     now = utc_now()
     cursor = db.execute(
         "INSERT INTO recurring_expenses (amount_cents, category_id, merchant_name, note,"
@@ -98,7 +99,7 @@ def create_recurring(
             amount_cents,
             body.category_id,
             clean_merchant_name(body.merchant),
-            _clean_note(body.note),
+            clean_note(body.note),
             paid_by,
             body.payment_method,
             body.interval_months,
@@ -139,18 +140,18 @@ def update_recurring(
             raise HTTPException(status_code=422, detail=message)
 
     if "amount" in sent:
-        changes["amount_cents"] = _amount(body.amount)
+        changes["amount_cents"] = require_amount(body.amount)
     if "category_id" in sent:
-        _check_category(
+        check_category(
             db, body.category_id, must_be_active=body.category_id != current["category_id"]
         )
         changes["category_id"] = body.category_id
     if "merchant" in sent:
         changes["merchant_name"] = clean_merchant_name(body.merchant)
     if "note" in sent:
-        changes["note"] = _clean_note(body.note)
+        changes["note"] = clean_note(body.note)
     if "paid_by_user_id" in sent:
-        _check_user(db, body.paid_by_user_id)
+        check_user(db, body.paid_by_user_id)
         changes["paid_by_user_id"] = body.paid_by_user_id
     if "payment_method" in sent:
         changes["payment_method"] = body.payment_method

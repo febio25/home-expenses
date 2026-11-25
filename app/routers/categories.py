@@ -7,7 +7,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..db import get_db, utc_now
-from ..schemas import CategoryCreate, CategoryOut, CategoryUpdate
+from ..schemas import CategoryCreate, CategoryOrderIn, CategoryOut, CategoryUpdate
 from ..security import current_user
 
 router = APIRouter(prefix="/categories", tags=["categories"], dependencies=[Depends(current_user)])
@@ -70,6 +70,29 @@ def create_category(body: CategoryCreate, db: sqlite3.Connection = Depends(get_d
     )
     db.commit()
     return dict(_fetch(db, cursor.lastrowid))
+
+
+@router.put("/order", response_model=list[CategoryOut])
+def reorder_categories(body: CategoryOrderIn, db: sqlite3.Connection = Depends(get_db)):
+    """Set the order of the categories in one go (0.14.0: the arrows in
+    Impostazioni → Categorie). ``ids`` must list every category, active and
+    not, each once; they get sort_order 10, 20, 30… in that order.
+
+    One request instead of a PATCH per category: two people reordering at
+    the same time cannot leave the list half done.
+    """
+    existing = {row["id"] for row in db.execute("SELECT id FROM categories")}
+    if len(body.ids) != len(set(body.ids)) or set(body.ids) != existing:
+        raise HTTPException(
+            status_code=409,
+            detail="L'elenco delle categorie è cambiato nel frattempo: ricarica e riprova.",
+        )
+    db.executemany(
+        "UPDATE categories SET sort_order = ? WHERE id = ?",
+        [((index + 1) * 10, category_id) for index, category_id in enumerate(body.ids)],
+    )
+    db.commit()
+    return list_categories(include_inactive=True, db=db)
 
 
 @router.patch("/{category_id}", response_model=CategoryOut)

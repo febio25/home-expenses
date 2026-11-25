@@ -1,11 +1,13 @@
-"""Full database backup download and restore from file."""
+"""Full database backup download and restore from file; from 0.14.0 also
+the copies kept on the server (app/copies.py) and the date of the last
+download."""
 
 from __future__ import annotations
 
 import os
 import sqlite3
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -13,26 +15,15 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
+from .. import copies
 from ..config import MAX_RESTORE_BYTES, get_settings
 from ..db import REQUIRED_TABLES, connect, latest_schema_version, migrate
-from ..schemas import MessageOut
+from ..schemas import BackupsOut, MessageOut
 from ..security import current_user
 
 router = APIRouter(tags=["backup"], dependencies=[Depends(current_user)])
 
 SQLITE_MAGIC = b"SQLite format 3\x00"
-KEEP_PRE_RESTORE_COPIES = 3
-
-
-def _snapshot(source_path: Path, target_path: Path) -> None:
-    """Consistent copy of a live database, via SQLite's online backup API."""
-    source = connect(source_path)
-    target = sqlite3.connect(target_path)
-    try:
-        source.backup(target)
-    finally:
-        target.close()
-        source.close()
 
 
 def _remove(path: str) -> None:
@@ -43,20 +34,24 @@ def _remove(path: str) -> None:
 
 
 @router.get("/backup", response_class=FileResponse)
-def download_backup():
+def download_backup(user: sqlite3.Row = Depends(current_user)):
     """Download the complete database as a single SQLite file.
 
     The file contains everything, password hashes included: keep it private.
+    The download is recorded (0.14.0): GET /backups says when and by whom.
     """
     settings = get_settings()
     handle, temp_path = tempfile.mkstemp(prefix="backup-", suffix=".db", dir=settings.data_dir)
     os.close(handle)
     try:
-        _snapshot(settings.db_path, Path(temp_path))
+        copies.snapshot(settings.db_path, Path(temp_path))
     except Exception:
         _remove(temp_path)
         raise
-    filename = f"spese-backup-{datetime.now().strftime('%Y%m%d-%H%M')}.db"
+    copies.record_download(user["display_name"])
+    # UTC, marked as such: the container has no time zone. The app names
+    # the file with the phone's own time instead.
+    filename = f"spese-backup-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')}Z.db"
     return FileResponse(
         temp_path,
         media_type="application/octet-stream",
@@ -111,11 +106,7 @@ def _restore(upload_path: Path) -> None:
     _validate_upload(upload_path)
 
     # Keep a copy of what is about to be replaced.
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    _snapshot(settings.db_path, settings.data_dir / f"pre-restore-{stamp}.db")
-    copies = sorted(settings.data_dir.glob("pre-restore-*.db"))
-    for old in copies[:-KEEP_PRE_RESTORE_COPIES]:
-        _remove(str(old))
+    copies.pre_restore_copy(settings)
 
     # Overwrite the live database in place through the backup API: SQLite
     # handles the locking, no file is swapped under open connections.
@@ -127,6 +118,8 @@ def _restore(upload_path: Path) -> None:
     finally:
         live.close()
         source.close()
+    # Only now: the copy being restored may itself be the oldest one.
+    copies.prune("pre_restore", copies.PRE_RESTORE_KEEP, settings)
 
 
 @router.post("/restore", response_model=MessageOut)
@@ -151,4 +144,23 @@ async def restore_backup(request: Request):
         await run_in_threadpool(_restore, Path(temp_path))
     finally:
         _remove(temp_path)
+    return {"detail": "Ripristino completato."}
+
+
+@router.get("/backups", response_model=BackupsOut)
+def list_backups():
+    """The copies kept on the server, newest first, and the last download
+    of a backup (0.14.0)."""
+    return {"last_download": copies.last_download(), "copies": copies.list_copies()}
+
+
+@router.post("/backups/{name}/restore", response_model=MessageOut)
+def restore_copy(name: str):
+    """Replace all data with one of the copies kept on the server, with the
+    same checks as a restore from file. The data replaced becomes a
+    ``pre-restore`` copy, so this can be undone the same way."""
+    path = copies.copy_path(name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Copia non trovata.")
+    _restore(path)
     return {"detail": "Ripristino completato."}

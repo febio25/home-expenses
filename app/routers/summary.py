@@ -12,8 +12,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..dates import add_months, month_bounds, resolve_range
 from ..db import get_db
-from ..schemas import INCOME_CATEGORIES, IncomeSummaryOut, MonthTotals, PeriodTotalsOut, SummaryOut
+from ..schemas import (
+    INCOME_CATEGORIES,
+    IncomeSummaryOut,
+    MonthTotals,
+    PeriodTotalsOut,
+    SearchTotalsOut,
+    SummaryOut,
+)
 from ..security import current_user
+from ..text import MAX_QUERY_LENGTH
+from .expenses import EXPENSE_SELECT, expense_filters
+from .incomes import INCOME_SELECT, income_filters
 
 router = APIRouter(prefix="/summary", tags=["summary"], dependencies=[Depends(current_user)])
 
@@ -49,6 +59,7 @@ def monthly_summary(
         (VOUCHER_CATEGORY, start.isoformat(), end.isoformat()),
     ).fetchone()
     total = sum(row["total_cents"] for row in by_category)
+    expected = expected_incomes(db, start, end)
     return {
         "month": month,
         "total_cents": total,
@@ -58,7 +69,71 @@ def monthly_summary(
         "income_count": income["count"],
         "voucher_cents": income["vouchers"],
         "balance_cents": income["cents"] - total,
+        "expected_income_cents": sum(item["amount_cents"] for item in expected),
+        "expected_incomes": expected,
     }
+
+
+def expected_incomes(db: sqlite3.Connection, start: date, end: date) -> list[dict]:
+    """Active recurring incomes whose next due date falls in [start, end]:
+    salaries and the like that the month will still bring (0.14.0). Until
+    the salary is registered, "incomes minus expenses" of the month in
+    progress is far below zero; the app shows these next to it.
+
+    A template's next_due is the first occurrence not registered yet, and
+    templates repeat every month at most often, so each one counts once.
+    """
+    rows = db.execute(
+        "SELECT r.id AS recurring_id, r.category, u.display_name AS received_by_name,"
+        "       r.next_due AS due_date, r.amount_cents"
+        "  FROM recurring_incomes r JOIN users u ON u.id = r.received_by_user_id"
+        " WHERE r.is_active = 1 AND r.next_due >= ? AND r.next_due <= ?"
+        " ORDER BY r.next_due, r.id",
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+    return [
+        {**dict(row), "category_name": INCOME_CATEGORIES.get(row["category"], row["category"])}
+        for row in rows
+    ]
+
+
+def _search_totals(db: sqlite3.Connection, select: str, where: str, params: list, date_column: str) -> dict:
+    """Count and total of every row a search finds, also per month, newest
+    month first. ``select`` is the list's own SELECT, so the joins the
+    search looks into (merchant, category, Vinted item) are the same."""
+    rows = db.execute(
+        f"SELECT substr(sub.day, 1, 7) AS month, COUNT(*) AS count, SUM(sub.cents) AS total_cents"
+        f"  FROM (SELECT {date_column} AS day, amount_cents AS cents FROM ({select}{where})) sub"
+        f" GROUP BY 1 ORDER BY 1 DESC",
+        params,
+    ).fetchall()
+    months = [dict(row) for row in rows]
+    return {
+        "count": sum(row["count"] for row in months),
+        "total_cents": sum(row["total_cents"] for row in months),
+        "months": months,
+    }
+
+
+@router.get("/search/expenses", response_model=SearchTotalsOut)
+def search_expense_totals(
+    q: str = Query(..., min_length=1, max_length=MAX_QUERY_LENGTH, description="As in GET /expenses"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Totals of a search in "Movimenti" over every month (0.14.0): the list
+    comes a page at a time from GET /expenses?q=…&limit=…&offset=…"""
+    where, params = expense_filters(None, None, None, None, q)
+    return _search_totals(db, EXPENSE_SELECT, where, params, "expense_date")
+
+
+@router.get("/search/incomes", response_model=SearchTotalsOut)
+def search_income_totals(
+    q: str = Query(..., min_length=1, max_length=MAX_QUERY_LENGTH, description="As in GET /incomes"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """The same as /summary/search/expenses, for the incomes."""
+    where, params = income_filters(None, None, None, q)
+    return _search_totals(db, INCOME_SELECT, where, params, "income_date")
 
 
 @router.get("/incomes", response_model=IncomeSummaryOut)

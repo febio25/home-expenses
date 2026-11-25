@@ -12,6 +12,7 @@
 // looks through every item, whatever the filter.
 
 import { api } from '../api.js';
+import { viewCache, sameData } from '../cache.js';
 import { state } from '../store.js';
 import {
   h, icon, mainHead, formatEuro, formatSignedEuro, monthLabel, todayIso, loadingBlock, errorBlock,
@@ -200,7 +201,12 @@ function soldGroups(items) {
 
 export async function mount(root, ctx) {
   let filter = (FILTERS.find((item) => item.query === ctx.query.get('filtro')) || FILTERS[0]).id;
+  // 0.14.0: opening the tab, the list starts from the first filter with
+  // items ("Da pubblicare", else "In vendita", else all of them). A filter
+  // chosen with a tap, or in the address, stays.
+  let chosen = ctx.query.has('filtro');
   if (nextFilter) {
+    chosen = true;
     filter = nextFilter;
     nextFilter = null;
     const query = FILTERS.find((item) => item.id === filter).query;
@@ -230,6 +236,7 @@ export async function mount(root, ctx) {
         'Nuovo articolo')));
 
   function setFilter(id) {
+    chosen = true;
     filter = id;
     const query = FILTERS.find((item) => item.id === id).query;
     history.replaceState(history.state, '', query ? `/vinted?filtro=${query}` : '/vinted');
@@ -315,15 +322,33 @@ export async function mount(root, ctx) {
       text ? h('p', { class: 'empty-text' }, text) : null);
   }
 
+  function startingFilter() {
+    if (chosen) return;
+    const has = (status) => items.some((item) => item.status === status);
+    filter = has('unlisted') ? 'unlisted' : has('listed') ? 'listed' : 'all';
+  }
+
+  // The list seen before in this session is drawn at once from memory
+  // (cache.js, 0.14.0), then refreshed quietly.
   async function load({ quiet = false } = {}) {
-    if (!quiet) body.replaceChildren(loadingBlock());
+    const cached = viewCache.get('vinted:items');
+    if (cached) {
+      items = cached;
+      startingFilter();
+      draw();
+    } else if (!quiet) body.replaceChildren(loadingBlock());
+    let fresh;
     try {
-      items = await api.get('/vinted/items');
+      fresh = await api.get('/vinted/items');
     } catch (error) {
-      if (!quiet && ctx.isCurrent()) body.replaceChildren(errorBlock(error, () => load()));
+      if (!quiet && !cached && ctx.isCurrent()) body.replaceChildren(errorBlock(error, () => load()));
       return;
     }
-    if (ctx.isCurrent()) draw();
+    if (!ctx.isCurrent() || (cached && sameData(cached, fresh))) return;
+    viewCache.set('vinted:items', fresh);
+    items = fresh;
+    startingFilter();
+    draw();
   }
 
   ctx.onResume(({ longAway }) => { if (longAway) load({ quiet: true }); });

@@ -30,7 +30,7 @@ from ..schemas import (
     RecurringOccurrence,
 )
 from ..security import current_user
-from .expenses import _amount, _check_user, _clean_note
+from ..validation import check_user, clean_note, require_amount
 from .incomes import fetch_income, insert_income
 
 router = APIRouter(
@@ -91,9 +91,9 @@ def create_recurring_income(
     user: sqlite3.Row = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    amount_cents = _amount(body.amount)
+    amount_cents = require_amount(body.amount)
     received_by = body.received_by_user_id if body.received_by_user_id is not None else user["id"]
-    _check_user(db, received_by)
+    check_user(db, received_by)
     now = utc_now()
     cursor = db.execute(
         "INSERT INTO recurring_incomes (amount_cents, category, note, received_by_user_id,"
@@ -102,7 +102,7 @@ def create_recurring_income(
         (
             amount_cents,
             body.category,
-            _clean_note(body.note),
+            clean_note(body.note),
             received_by,
             body.interval_months,
             body.next_due.day,
@@ -141,13 +141,13 @@ def update_recurring_income(
 
     changes: dict[str, object] = {}
     if "amount" in sent:
-        changes["amount_cents"] = _amount(body.amount)
+        changes["amount_cents"] = require_amount(body.amount)
     if "category" in sent:
         changes["category"] = body.category
     if "note" in sent:
-        changes["note"] = _clean_note(body.note)
+        changes["note"] = clean_note(body.note)
     if "received_by_user_id" in sent:
-        _check_user(db, body.received_by_user_id)
+        check_user(db, body.received_by_user_id)
         changes["received_by_user_id"] = body.received_by_user_id
     if "interval_months" in sent:
         changes["interval_months"] = body.interval_months

@@ -17,7 +17,8 @@ from ..db import get_db, utc_now
 from ..schemas import INCOME_CATEGORIES, IncomeCategoryOut, IncomeCreate, IncomeOut, IncomeUpdate
 from ..security import current_user
 from ..text import MAX_QUERY_LENGTH, clean_query, fold, search_clause
-from .expenses import _amount, _check_user, _clean_note
+from ..validation import check_user, clean_note, require_amount
+from .expenses import MAX_PAGE
 
 router = APIRouter(prefix="/incomes", tags=["incomes"])
 
@@ -62,21 +63,11 @@ def list_income_categories(user: sqlite3.Row = Depends(current_user)):
     return [{"code": code, "name": name} for code, name in INCOME_CATEGORIES.items()]
 
 
-@router.get("", response_model=list[IncomeOut])
-def list_incomes(
-    month: str | None = Query(None, description="YYYY-MM; wins over from/to"),
-    date_from: date | None = Query(None, alias="from"),
-    date_to: date | None = Query(None, alias="to"),
-    q: str | None = Query(
-        None, max_length=MAX_QUERY_LENGTH,
-        description="Text to find in note, category or linked Vinted item, "
-        "without case or accents; or an amount (\"12,50\")",
-    ),
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    """Incomes in the range, newest first. Without parameters: all of them.
-    With ``q`` (0.9.0), only the incomes that match it (see GET /expenses)."""
+def income_filters(
+    month: str | None, date_from: date | None, date_to: date | None, q: str | None = None
+) -> tuple[str, list]:
+    """WHERE clause (possibly empty) and parameters over INCOME_SELECT's
+    aliases. Shared by the list and by GET /summary/search/incomes."""
     start, end = resolve_range(month, date_from, date_to)
     where, params = range_filter(start, end, column="i.income_date")
     conditions = [where.removeprefix(" WHERE ")] if where else []
@@ -90,9 +81,34 @@ def list_incomes(
             clause_params.extend(codes)
         conditions.append(clause)
         params.extend(clause_params)
-    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    return (f" WHERE {' AND '.join(conditions)}" if conditions else ""), params
+
+
+@router.get("", response_model=list[IncomeOut])
+def list_incomes(
+    month: str | None = Query(None, description="YYYY-MM; wins over from/to"),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    q: str | None = Query(
+        None, max_length=MAX_QUERY_LENGTH,
+        description="Text to find in note, category or linked Vinted item, "
+        "without case or accents; or an amount (\"12,50\")",
+    ),
+    limit: int | None = Query(None, ge=1, le=MAX_PAGE, description="Page size (0.14.0); all rows without it"),
+    offset: int = Query(0, ge=0, description="Rows to skip, with limit"),
+    user: sqlite3.Row = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Incomes in the range, newest first. Without parameters: all of them.
+    With ``q`` (0.9.0), only the incomes that match it (see GET /expenses);
+    with ``limit`` and ``offset`` (0.14.0), one page of them."""
+    where, params = income_filters(month, date_from, date_to, q)
+    page = ""
+    if limit is not None:
+        page = " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
     rows = db.execute(
-        f"{INCOME_SELECT}{where} ORDER BY i.income_date DESC, i.id DESC", params
+        f"{INCOME_SELECT}{where} ORDER BY i.income_date DESC, i.id DESC{page}", params
     ).fetchall()
     return [income_out(row) for row in rows]
 
@@ -110,10 +126,10 @@ def insert_income(
     if existing is not None:
         return existing, False
 
-    amount_cents = _amount(body.amount)
+    amount_cents = require_amount(body.amount)
     check_expense_date(body.income_date)  # same window as expenses: 2000 to today
     received_by = body.received_by_user_id if body.received_by_user_id is not None else user["id"]
-    _check_user(db, received_by)
+    check_user(db, received_by)
 
     now = utc_now()
     try:
@@ -126,7 +142,7 @@ def insert_income(
                 amount_cents,
                 body.income_date.isoformat(),
                 body.category,
-                _clean_note(body.note),
+                clean_note(body.note),
                 received_by,
                 user["id"],
                 now,
@@ -187,7 +203,7 @@ def update_income(
     if "amount" in sent:
         if body.amount is None:
             raise HTTPException(status_code=422, detail="Inserisci un importo.")
-        changes["amount_cents"] = _amount(body.amount)
+        changes["amount_cents"] = require_amount(body.amount)
     if "category" in sent:
         if body.category is None:
             raise HTTPException(status_code=422, detail="Scegli una categoria.")
@@ -207,10 +223,10 @@ def update_income(
     if "received_by_user_id" in sent:
         if body.received_by_user_id is None:
             raise HTTPException(status_code=422, detail="Indica chi ha ricevuto l'entrata.")
-        _check_user(db, body.received_by_user_id)
+        check_user(db, body.received_by_user_id)
         changes["received_by_user_id"] = body.received_by_user_id
     if "note" in sent:
-        changes["note"] = _clean_note(body.note)
+        changes["note"] = clean_note(body.note)
 
     if changes:
         changes["updated_at"] = utc_now()

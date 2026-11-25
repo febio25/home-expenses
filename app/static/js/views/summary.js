@@ -5,10 +5,11 @@
 // "Entrate" row opens the incomes of the month (summary-incomes.js).
 
 import { api } from '../api.js';
+import { viewCache, sameData } from '../cache.js';
 import { state } from '../store.js';
 import {
   h, mainHead, formatEuro, formatSignedEuro, formatShare, monthLabel, currentMonth, latestPlannedMonth,
-  loadingBlock, errorBlock,
+  dayMonthShort, loadingBlock, errorBlock,
 } from '../ui.js';
 import { monthSwitcher, monthFromQuery } from './movements.js';
 import { explorePath } from './explore.js';
@@ -140,7 +141,37 @@ function balanceCard(summary, month) {
     h('span', { class: 'balance-meta' }, hasIncome ? meta : 'Stipendi, rimborsi, regali: aggiungili qui')),
   h('span', { class: 'balance-amount' }, hasIncome ? formatEuro(summary.income_cents) : 'Nessuna'),
   h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›'))];
-  if (hasIncome) {
+
+  // 0.14.0: recurring incomes due in the month and not registered yet. In
+  // the month in progress the difference would otherwise sit far below
+  // zero until the salary arrives; with them it says where the month is
+  // heading, and "finora" keeps what has happened in view.
+  const expected = summary.expected_incomes || [];
+  if (expected.length) {
+    const ahead = month >= currentMonth();
+    const name = ahead ? 'Attese' : 'Da registrare';
+    const listed = expected.slice(0, 2)
+      // No-break spaces: "27 nov" and the name stay together when it wraps.
+      .map((item) => `${item.category_name} ${item.received_by_name}\u00a0${dayMonthShort(item.due_date).replace(' ', '\u00a0')}`);
+    if (expected.length > 2) listed.push(`altre ${expected.length - 2}`);
+    rows.push(h('a', {
+      class: 'balance-row balance-link balance-expected', href: '/ricorrenti', dataset: { link: '' },
+      'aria-label': `${name}: ${formatEuro(summary.expected_income_cents)}, ${listed.join(', ')}. Vedi le ricorrenti`,
+    },
+    h('span', { class: 'balance-main' },
+      h('span', { class: 'balance-name' }, name),
+      h('span', { class: 'balance-meta' }, listed.join(' · '))),
+    h('span', { class: 'balance-amount' }, `+${formatEuro(summary.expected_income_cents)}`),
+    h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›')));
+    const projected = summary.balance_cents + summary.expected_income_cents;
+    const meta = ahead ? 'Con le entrate attese' : 'Con quelle da registrare';
+    rows.push(h('div', { class: 'balance-row' },
+      h('span', { class: 'balance-main' },
+        h('span', { class: 'balance-name' }, 'Differenza'),
+        h('span', { class: 'balance-meta' },
+          hasIncome ? `${meta}; finora ${formatSignedEuro(summary.balance_cents)}` : meta)),
+      h('span', { class: `balance-amount balance-diff ${signClass(projected)}` }, formatSignedEuro(projected))));
+  } else if (hasIncome) {
     rows.push(h('div', { class: 'balance-row' },
       h('span', { class: 'balance-main' },
         h('span', { class: 'balance-name' }, 'Differenza'),
@@ -320,25 +351,36 @@ export async function mount(root, ctx) {
     mainHead('Riepilogo', state.me.display_name),
     switcherSlot, body);
 
-  // quiet: see the same option in movements.js.
+  // quiet: see the same option in movements.js. A month seen before in this
+  // session is drawn at once from memory (cache.js), then refreshed.
   async function show(nextMonth, { quiet = false } = {}) {
     month = nextMonth;
     history.replaceState(history.state, '', summaryPath(month));
     switcherSlot.replaceChildren(monthSwitcher(month, show, { max: latestPlannedMonth() }));
-    if (!quiet) body.replaceChildren(loadingBlock());
-    let summary;
-    let trend;
+    const key = `summary:${month}`;
+    const cached = viewCache.get(key);
+    if (cached) draw(cached);
+    else if (!quiet) body.replaceChildren(loadingBlock());
+    let data;
     try {
-      [summary, trend] = await Promise.all([
+      const [summary, trend] = await Promise.all([
         api.get(`/summary?month=${month}`),
         api.get(`/summary/trend?month=${month}&months=${TREND_MONTHS}`),
       ]);
+      data = { summary, trend };
     } catch (error) {
-      if (!quiet && ctx.isCurrent() && month === nextMonth) body.replaceChildren(errorBlock(error, () => show(month)));
+      if (!quiet && !cached && ctx.isCurrent() && month === nextMonth) {
+        body.replaceChildren(errorBlock(error, () => show(month)));
+      }
       return;
     }
     if (!ctx.isCurrent() || month !== nextMonth) return;
+    if (cached && sameData(cached, data)) return;
+    viewCache.set(key, data);
+    draw(data);
+  }
 
+  function draw({ summary, trend }) {
     const expenseCount = summary.expense_count === 1 ? '1 spesa' : `${summary.expense_count} spese`;
     const parts = [
       h('div', { class: 'receipt receipt-total' },

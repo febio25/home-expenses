@@ -68,10 +68,18 @@ def migrate(conn: sqlite3.Connection) -> None:
 
 
 def init_db() -> None:
+    """Create the database on first start; after an update, keep a copy of
+    it (0.14.0) and then apply the new migrations."""
+    from . import copies  # copies imports connect() from here
+
     settings = get_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    copies.move_legacy_pre_restore(settings)
     conn = connect(settings.db_path)
     try:
+        current = conn.execute("PRAGMA user_version").fetchone()[0]
+        if 0 < current < latest_schema_version():
+            copies.pre_update_copy(settings, current)
         migrate(conn)
     finally:
         conn.close()

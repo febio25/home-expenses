@@ -9,10 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..dates import check_expense_date, range_filter, resolve_range
 from ..db import get_db, utc_now
-from ..money import AmountError, parse_amount
-from ..schemas import ExpenseCreate, ExpenseOut, ExpenseUpdate
+from ..schemas import ExpenseCreate, ExpenseCreatedOut, ExpenseDuplicateOut, ExpenseOut, ExpenseUpdate
 from ..security import current_user
 from ..text import MAX_QUERY_LENGTH, clean_query, search_clause
+from ..validation import check_category, check_user, clean_note, require_amount
 from .merchants import get_or_create_merchant, prune_merchant
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
@@ -43,55 +43,21 @@ def _fetch(db: sqlite3.Connection, expense_id: int) -> sqlite3.Row:
     return row
 
 
-def _amount(text: str) -> int:
-    try:
-        return parse_amount(text)
-    except AmountError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+# Largest page of GET /expenses and GET /incomes (0.14.0): the search of
+# "Movimenti" reads 100 rows at a time.
+MAX_PAGE = 500
 
 
-def _check_category(db: sqlite3.Connection, category_id: int, must_be_active: bool) -> None:
-    row = db.execute(
-        "SELECT is_active FROM categories WHERE id = ?", (category_id,)
-    ).fetchone()
-    if row is None:
-        raise HTTPException(status_code=422, detail="Categoria non valida.")
-    if must_be_active and not row["is_active"]:
-        raise HTTPException(status_code=422, detail="Questa categoria è disattivata.")
-
-
-def _check_user(db: sqlite3.Connection, user_id: int) -> None:
-    if db.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone() is None:
-        raise HTTPException(status_code=422, detail="Utente non valido.")
-
-
-def _clean_note(note: str | None) -> str | None:
-    if note is None:
-        return None
-    return note.strip() or None
-
-
-@router.get("", response_model=list[ExpenseOut])
-def list_expenses(
-    month: str | None = Query(None, description="YYYY-MM; wins over from/to"),
-    date_from: date | None = Query(None, alias="from"),
-    date_to: date | None = Query(None, alias="to"),
-    category_id: int | None = Query(None, description="Only expenses of this category"),
-    q: str | None = Query(
-        None, max_length=MAX_QUERY_LENGTH,
-        description="Text to find in merchant, note, category or linked Vinted item, "
-        "without case or accents; or an amount (\"12,50\")",
-    ),
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    """Expenses in the range, newest first. Without parameters: all of them.
-
-    With ``category_id``, only that category (used by the summary to show
-    what makes up a category total). An unknown id gives an empty list.
-    With ``q`` (0.9.0), only the expenses that match it: the search of
-    "Movimenti", over every month unless a range is given too.
-    """
+def expense_filters(
+    month: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    category_id: int | None = None,
+    q: str | None = None,
+) -> tuple[str, list]:
+    """WHERE clause (possibly empty) and parameters over EXPENSE_SELECT's
+    aliases. Shared by the list and by the totals of a search
+    (GET /summary/search/expenses), so both always count the same rows."""
     start, end = resolve_range(month, date_from, date_to)
     where, params = range_filter(start, end)
     conditions = [where.removeprefix(" WHERE ")] if where else []
@@ -105,9 +71,44 @@ def list_expenses(
         )
         conditions.append(clause)
         params.extend(clause_params)
-    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    return (f" WHERE {' AND '.join(conditions)}" if conditions else ""), params
+
+
+SEARCH_QUERY = Query(
+    None, max_length=MAX_QUERY_LENGTH,
+    description="Text to find in merchant, note, category or linked Vinted item, "
+    "without case or accents; or an amount (\"12,50\")",
+)
+
+
+@router.get("", response_model=list[ExpenseOut])
+def list_expenses(
+    month: str | None = Query(None, description="YYYY-MM; wins over from/to"),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    category_id: int | None = Query(None, description="Only expenses of this category"),
+    q: str | None = SEARCH_QUERY,
+    limit: int | None = Query(None, ge=1, le=MAX_PAGE, description="Page size (0.14.0); all rows without it"),
+    offset: int = Query(0, ge=0, description="Rows to skip, with limit"),
+    user: sqlite3.Row = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Expenses in the range, newest first. Without parameters: all of them.
+
+    With ``category_id``, only that category (used by the summary to show
+    what makes up a category total). An unknown id gives an empty list.
+    With ``q`` (0.9.0), only the expenses that match it: the search of
+    "Movimenti", over every month unless a range is given too. With
+    ``limit`` and ``offset`` (0.14.0), one page of the list; the totals of
+    all the matches come from GET /summary/search/expenses.
+    """
+    where, params = expense_filters(month, date_from, date_to, category_id, q)
+    page = ""
+    if limit is not None:
+        page = " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
     rows = db.execute(
-        f"{EXPENSE_SELECT}{where} ORDER BY e.expense_date DESC, e.id DESC", params
+        f"{EXPENSE_SELECT}{where} ORDER BY e.expense_date DESC, e.id DESC{page}", params
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -132,11 +133,11 @@ def insert_expense(
         if existing is not None:
             return existing["id"], False
 
-    amount_cents = _amount(body.amount)
+    amount_cents = require_amount(body.amount)
     check_expense_date(body.expense_date, planned=planned)
-    _check_category(db, body.category_id, must_be_active=True)
+    check_category(db, body.category_id, must_be_active=True)
     paid_by = body.paid_by_user_id if body.paid_by_user_id is not None else user["id"]
-    _check_user(db, paid_by)
+    check_user(db, paid_by)
 
     now = utc_now()
     merchant_id = get_or_create_merchant(db, body.merchant)
@@ -151,7 +152,7 @@ def insert_expense(
                 body.expense_date.isoformat(),
                 body.category_id,
                 merchant_id,
-                _clean_note(body.note),
+                clean_note(body.note),
                 paid_by,
                 body.payment_method,
                 user["id"],
@@ -175,7 +176,25 @@ def fetch_expense(db: sqlite3.Connection, expense_id: int) -> dict:
     return dict(_fetch(db, expense_id))
 
 
-@router.post("", response_model=ExpenseOut, status_code=201)
+def possible_duplicates(db: sqlite3.Connection, expense: sqlite3.Row) -> list[dict]:
+    """Other expenses that look like this one (0.14.0): same day, same
+    amount and same merchant; when it has no merchant, the same category
+    among those without one. Whoever entered them: the other person, or
+    the same one who forgot. Oldest first."""
+    if expense["merchant_id"] is not None:
+        same_place, place_params = "e.merchant_id = ?", [expense["merchant_id"]]
+    else:
+        same_place, place_params = "e.merchant_id IS NULL AND e.category_id = ?", [expense["category_id"]]
+    rows = db.execute(
+        f"{EXPENSE_SELECT} WHERE e.id != ? AND e.expense_date = ? AND e.amount_cents = ?"
+        f" AND {same_place} ORDER BY e.created_at, e.id",
+        (expense["id"], expense["expense_date"], expense["amount_cents"], *place_params),
+    ).fetchall()
+    keys = ExpenseDuplicateOut.model_fields
+    return [{key: row[key] for key in keys} for row in rows]
+
+
+@router.post("", response_model=ExpenseCreatedOut, status_code=201)
 def create_expense(
     body: ExpenseCreate,
     response: Response,
@@ -186,13 +205,17 @@ def create_expense(
 
     Retrying with the same ``client_uuid`` (for example after a dropped
     connection) returns the expense already saved, with status 200.
+
+    ``possible_duplicates`` (0.14.0) lists the expenses that look like this
+    one. It never blocks the save: the app mentions it next to «Annulla».
     """
     expense_id, created = insert_expense(db, user, body, planned=True)
     if created:
         db.commit()
     else:
         response.status_code = 200
-    return dict(_fetch(db, expense_id))
+    expense = _fetch(db, expense_id)
+    return {**dict(expense), "possible_duplicates": possible_duplicates(db, expense)}
 
 
 @router.get("/{expense_id}", response_model=ExpenseOut)
@@ -222,12 +245,12 @@ def update_expense(
     if "amount" in sent:
         if body.amount is None:
             raise HTTPException(status_code=422, detail="Inserisci un importo.")
-        changes["amount_cents"] = _amount(body.amount)
+        changes["amount_cents"] = require_amount(body.amount)
     if "category_id" in sent:
         if body.category_id is None:
             raise HTTPException(status_code=422, detail="Scegli una categoria.")
         # Keeping an inactive category on an old expense is allowed.
-        _check_category(
+        check_category(
             db, body.category_id, must_be_active=body.category_id != current["category_id"]
         )
         # The purchase of a Vinted item stays in the Vinted category, or it
@@ -248,14 +271,14 @@ def update_expense(
     if "paid_by_user_id" in sent:
         if body.paid_by_user_id is None:
             raise HTTPException(status_code=422, detail="Indica chi ha pagato.")
-        _check_user(db, body.paid_by_user_id)
+        check_user(db, body.paid_by_user_id)
         changes["paid_by_user_id"] = body.paid_by_user_id
     if "payment_method" in sent:
         if body.payment_method is None:
             raise HTTPException(status_code=422, detail="Scegli un metodo di pagamento.")
         changes["payment_method"] = body.payment_method
     if "note" in sent:
-        changes["note"] = _clean_note(body.note)
+        changes["note"] = clean_note(body.note)
     if "merchant" in sent:
         changes["merchant_id"] = get_or_create_merchant(db, body.merchant)
 

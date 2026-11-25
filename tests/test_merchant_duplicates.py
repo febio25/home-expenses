@@ -94,7 +94,9 @@ def test_list_of_possible_duplicates(client, several):
     ]
     first = client.get(f"{API}/merchants/duplicates").json()[0]
     assert first["reason_name"] == "Stesso nome scritto in modo diverso"
-    assert set(first["merchants"][0]) == {"id", "name", "expense_count", "last_category_id"}
+    assert set(first["merchants"][0]) == {
+        "id", "name", "expense_count", "recent_count", "last_category_id",  # recent_count: 0.14.0
+    }
     assert first["merchants"][0]["expense_count"] == 3
 
 

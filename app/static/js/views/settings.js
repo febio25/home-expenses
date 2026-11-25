@@ -1,11 +1,14 @@
 // "Impostazioni": categories, merchants, CSV export, backup, account.
 
 import { api } from '../api.js';
-import { state, loadUsers, loadCategories, loadMerchants, clearState } from '../store.js';
+import {
+  state, loadUsers, loadCategories, loadMerchants, clearState, rememberCategories,
+} from '../store.js';
 import {
   h, icon, toast, confirmDialog, promptDialog, choiceDialog, currentMonth, todayIso, loadingBlock, errorBlock,
-  passwordField, passwordProblem, newPasswordDialog,
+  passwordField, passwordProblem, newPasswordDialog, dayMonthShort,
 } from '../ui.js';
+import { copyText } from '../vinted-listing.js';
 
 function section(title, hint, content, { open = false } = {}) {
   return h('details', { class: 'card settings-section', open },
@@ -28,9 +31,43 @@ function categoriesSection() {
     class: 'input', type: 'text', maxLength: 40, required: true, autocomplete: 'off',
     placeholder: 'Nuova categoria', 'aria-label': 'Nome della nuova categoria',
   });
+  // 0.14.0: "Cambia l'ordine" turns the list into one with arrows; the order
+  // is the one of the buttons in "Nuova spesa".
+  let categories = [];
+  let reordering = false;
+  const orderButton = h('button', {
+    class: 'btn btn-quiet btn-block', type: 'button',
+    onclick: () => { reordering = !reordering; draw(); },
+  });
+  const orderHint = h('p', { class: 'settings-text', hidden: true },
+    'Lo stesso ordine dei pulsanti in «Nuova spesa»: in alto le categorie che usate di più.');
 
   async function refresh() {
-    const categories = await loadCategories({ force: true });
+    categories = await loadCategories({ force: true });
+    draw();
+  }
+
+  function draw() {
+    orderButton.textContent = reordering ? 'Fatto' : 'Cambia l’ordine';
+    orderButton.classList.toggle('btn-primary', reordering);
+    orderButton.classList.toggle('btn-quiet', !reordering);
+    orderHint.hidden = !reordering;
+    if (reordering) {
+      list.replaceChildren(...categories.map((category, index) => h('li', { class: 'manage-item' },
+        h('span', { class: 'manage-name' },
+          category.name,
+          category.is_active ? null : h('span', { class: 'tag' }, 'disattivata')),
+        h('span', { class: 'manage-actions order-actions' },
+          h('button', {
+            class: 'order-step', type: 'button', disabled: index === 0,
+            'aria-label': `Sposta su «${category.name}»`, onclick: () => move(index, -1),
+          }, icon('up')),
+          h('button', {
+            class: 'order-step', type: 'button', disabled: index === categories.length - 1,
+            'aria-label': `Sposta giù «${category.name}»`, onclick: () => move(index, 1),
+          }, icon('down'))))));
+      return;
+    }
     // The Vinted category (0.8.0) can be renamed, never deactivated: the
     // section of the same name relies on it.
     list.replaceChildren(...categories.map((category) => h('li', { class: 'manage-item' },
@@ -43,6 +80,25 @@ function categoriesSection() {
         category.system_key ? null : h('button', {
           class: 'btn-text', type: 'button', onclick: () => toggle(category),
         }, category.is_active ? 'Disattiva' : 'Riattiva')))));
+  }
+
+  // One request with the whole new order (PUT /categories/order): two
+  // phones reordering at once cannot leave it half done.
+  async function move(index, step) {
+    const ids = categories.map((category) => category.id);
+    [ids[index], ids[index + step]] = [ids[index + step], ids[index]];
+    try {
+      const saved = await api.put('/categories/order', { ids });
+      categories = saved;
+      rememberCategories(saved);
+      draw();
+      const moved = list.querySelectorAll('.manage-item')[index + step];
+      const button = moved && moved.querySelector(`.order-step:nth-child(${step < 0 ? 1 : 2})`);
+      if (button && !button.disabled) button.focus({ preventScroll: true });
+    } catch (error) {
+      report(error, 'Ordine non salvato');
+      if (error.status === 409) refresh().catch(() => {});
+    }
   }
 
   async function rename(category) {
@@ -85,7 +141,7 @@ function categoriesSection() {
     },
   }, nameInput, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Aggiungi'));
 
-  return { element: h('div', {}, list, form), refresh };
+  return { element: h('div', {}, list, orderHint, orderButton, form), refresh };
 }
 
 // --- merchants --------------------------------------------------------------
@@ -256,10 +312,13 @@ function exportSection() {
   let format = 'standard';
   // Separate files: the expense CSV keeps its usual columns. The Vinted
   // items are all exported, with no period: they live for months.
+  // "Per Claude" (0.14.0): the expense and income files of the period, in
+  // the standard format, plus a text to paste with them (claudePackage).
   const EXPORTS = {
     expenses: { path: '/export.csv', fallbackName: 'spese.csv' },
     incomes: { path: '/export/incomes.csv', fallbackName: 'entrate.csv' },
     vinted: { path: '/export/vinted.csv', fallbackName: 'vinted_articoli.csv', allItems: true },
+    claude: { path: '/export/brief', package: true },
   };
   const periodBlock = h('div', {});
   function choice(name, options, onPick) {
@@ -300,11 +359,22 @@ function exportSection() {
       }
       button.disabled = true;
       try {
-        await api.download(`${EXPORTS[what].path}?${query}`, EXPORTS[what].fallbackName);
+        if (EXPORTS[what].package) {
+          query.delete('format');
+          await claudePackage(query);
+        } else {
+          await api.download(`${EXPORTS[what].path}?${query}`, EXPORTS[what].fallbackName);
+        }
       } catch (error) { report(error, 'Export non riuscito'); }
       button.disabled = false;
     },
   }, 'Scarica CSV');
+  const formatBlock = h('div', {},
+    h('span', { class: 'label' }, 'Formato'),
+    choice('export-format', [
+      { value: 'standard', label: 'Standard', hint: 'Virgola come separatore, punto decimale. Per l’analisi con un assistente AI.' },
+      { value: 'excel_it', label: 'Excel italiano', hint: 'Punto e virgola come separatore, virgola decimale. Si apre con un doppio clic.' },
+    ], (value) => { format = value; }));
 
   return h('div', {},
     h('span', { class: 'label' }, 'Cosa esportare'),
@@ -316,28 +386,125 @@ function exportSection() {
         label: 'Articoli Vinted',
         hint: 'Tutti gli articoli: acquisto, vendita, guadagno, giorni in vendita, prezzi dell’annuncio.',
       },
+      {
+        value: 'claude',
+        label: 'Per Claude',
+        hint: 'Spese ed entrate del periodo in formato standard, più un testo da incollare con i totali per il controllo e le regole dell’app.',
+      },
     ], (value) => {
       what = value;
       periodBlock.hidden = Boolean(EXPORTS[value].allItems);
+      formatBlock.hidden = Boolean(EXPORTS[value].package);
+      button.textContent = EXPORTS[value].package ? 'Scarica i file e copia il testo' : 'Scarica CSV';
     }),
     periodBlock,
-    h('span', { class: 'label' }, 'Formato'),
-    choice('export-format', [
-      { value: 'standard', label: 'Standard', hint: 'Virgola come separatore, punto decimale. Per l’analisi con un assistente AI.' },
-      { value: 'excel_it', label: 'Excel italiano', hint: 'Punto e virgola come separatore, virgola decimale. Si apre con un doppio clic.' },
-    ], (value) => { format = value; }),
+    formatBlock,
     button);
+}
+
+// "Per Claude" (0.14.0): the files of the period and the text that goes with
+// them. The app sends nothing anywhere: it downloads the files and copies
+// the text; in Claude, a new chat of the project, the files attached and
+// the text pasted.
+async function claudePackage(query) {
+  const brief = await api.get(`/export/brief?${query}`);
+  if (!brief.files.length) {
+    toast('Nel periodo non ci sono spese né entrate.', { kind: 'error' });
+    return;
+  }
+  for (const file of brief.files) {
+    await api.download(file.url.replace(/^\/api\/v1/, ''), file.name);
+  }
+  const files = brief.files.length === 1 ? 'il file' : `i ${brief.files.length} file`;
+  await copyText(brief.text, `File scaricati e testo copiato: in Claude allega ${files} e incolla il testo.`);
 }
 
 // --- backup and restore -------------------------------------------------------
 
+const KIND_LABELS = {
+  daily: 'Copia del giorno',
+  pre_update: 'Prima di un aggiornamento',
+  pre_restore: 'Prima di un ripristino',
+};
+
+// "25 nov 2026, 18:02" in the phone's time (the server writes UTC).
+function localStamp(iso) {
+  return new Date(iso).toLocaleString('it-IT', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function sizeLabel(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+}
+
+// After a restore, users and sessions come from the restored data: start over.
+function restarted() {
+  clearState();
+  toast('Ripristino completato.', { kind: 'success' });
+  setTimeout(() => location.assign('/'), 1200);
+}
+
 function backupSection() {
+  // 0.14.0: when the last backup was downloaded, and by whom (shared by the
+  // two phones), and the copies the server keeps by itself.
+  const lastLine = h('p', { class: 'settings-text backup-last' });
+  const copiesList = h('ul', { class: 'manage-list' });
+  const copiesBlock = h('div', { hidden: true },
+    h('h3', { class: 'settings-subtitle' }, 'Copie automatiche sull’Umbrel'),
+    h('p', { class: 'settings-text' },
+      'Una al giorno (le ultime 7), più una prima di ogni aggiornamento che cambia il database e una prima di ogni ripristino. Proteggono dagli errori, non da un guasto del disco: per quello scarica il backup ogni tanto, o attiva i Backup di umbrelOS (Settings → Backups).'),
+    copiesList);
+
+  async function refresh() {
+    let info;
+    try {
+      info = await api.get('/backups');
+    } catch (error) {
+      lastLine.textContent = '';
+      return;
+    }
+    const last = info.last_download;
+    const days = last ? Math.floor((Date.now() - new Date(last.at).getTime()) / 86400000) : null;
+    lastLine.classList.toggle('is-old', !last || days > 30);
+    lastLine.textContent = last
+      ? `Ultimo backup scaricato: ${localStamp(last.at)} (${last.user_name})${days > 30 ? `, ${days} giorni fa` : ''}.`
+      : 'Nessun backup scaricato finora.';
+    copiesBlock.hidden = !info.copies.length;
+    copiesList.replaceChildren(...info.copies.map((copy) => h('li', { class: 'manage-item' },
+      h('span', { class: 'manage-name' },
+        localStamp(copy.created_at),
+        h('span', { class: 'manage-count' }, `${KIND_LABELS[copy.kind]} · ${sizeLabel(copy.size_bytes)}`)),
+      h('span', { class: 'manage-actions' },
+        h('button', { class: 'btn-text', type: 'button', onclick: () => restoreCopy(copy) }, 'Ripristina')))));
+  }
+
+  async function restoreCopy(copy) {
+    const confirmed = await confirmDialog({
+      title: 'Ripristinare questa copia?',
+      message: `Tutti i dati attuali (spese, entrate, categorie, esercenti, utenti e password) saranno sostituiti con quelli della copia del ${localStamp(copy.created_at)}. I dati attuali restano a loro volta in una copia.`,
+      confirmLabel: 'Ripristina',
+      danger: true,
+    });
+    if (!confirmed) return;
+    try {
+      await api.post(`/backups/${encodeURIComponent(copy.name)}/restore`);
+      restarted();
+    } catch (error) { report(error, 'Ripristino non riuscito'); }
+  }
+
   const downloadButton = h('button', {
     class: 'btn btn-primary btn-block', type: 'button',
     onclick: async () => {
       downloadButton.disabled = true;
+      // The file is named with the phone's own time (the server runs on UTC).
+      const now = new Date();
+      const pad = (number) => String(number).padStart(2, '0');
+      const name = `spese-backup-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.db`;
       try {
-        await api.download('/backup', 'spese-backup.db');
+        await api.download('/backup', name, { name });
+        refresh();
       } catch (error) { report(error, 'Backup non riuscito'); }
       downloadButton.disabled = false;
     },
@@ -358,20 +525,20 @@ function backupSection() {
       if (!confirmed) return;
       try {
         await api.restore(file);
-        clearState();
-        toast('Ripristino completato.', { kind: 'success' });
-        // Start over: users and sessions now come from the backup.
-        setTimeout(() => location.assign('/'), 1200);
+        restarted();
       } catch (error) { report(error, 'Ripristino non riuscito'); }
     },
   });
 
+  refresh();
   return h('div', {},
     h('p', { class: 'settings-text' },
-      'Il backup è un unico file con tutti i dati dell’app, compresi gli utenti e le loro password in forma protetta: conservalo in un posto sicuro.'),
+      'Il backup è un unico file con tutti i dati dell’app, compresi gli utenti e le loro password in forma protetta: conservalo in un posto sicuro, fuori dall’Umbrel.'),
+    lastLine,
     downloadButton,
     h('label', { class: 'btn btn-quiet btn-block', for: 'restore-file' }, 'Ripristina da file…'),
-    fileInput);
+    fileInput,
+    copiesBlock);
 }
 
 // --- account ------------------------------------------------------------------
@@ -468,10 +635,10 @@ export async function mount(root, ctx) {
         h('span', { class: 'settings-title' }, 'Ricorrenti'),
         h('span', { class: 'settings-hint' }, 'Abbonamenti, bollette e stipendi da registrare con un tocco')),
       h('span', { class: 'settings-go', 'aria-hidden': 'true' }, '›')),
-    section('Categorie', 'Aggiungi, rinomina, disattiva', categories.element),
+    section('Categorie', 'Aggiungi, rinomina, riordina, disattiva', categories.element),
     section('Esercenti', 'Cerca, rinomina, unisci i doppioni', merchants.element),
-    section('Esporta CSV', 'Spese, entrate o articoli Vinted', exportSection()),
-    section('Backup e ripristino', 'Scarica o ricarica tutti i dati', backupSection()),
+    section('Esporta CSV', 'Spese, entrate, articoli Vinted o per Claude', exportSection()),
+    section('Backup e ripristino', 'Scarica, ricarica, copie automatiche', backupSection()),
     section('Account', 'Password, uscita', accountSection(users, ctx.navigate)),
     version);
 }

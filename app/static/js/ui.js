@@ -31,6 +31,9 @@ const ICONS = {
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   left: '<path d="M15 5l-7 7 7 7"/>',
   right: '<path d="M9 5l7 7-7 7"/>',
+  // 0.14.0: move a category up or down in Impostazioni.
+  up: '<path d="M5 15l7-7 7 7"/>',
+  down: '<path d="M5 9l7 7 7-7"/>',
   // 0.8.0, Vinted section: price tag (tab), search, camera, photo, close,
   // sold check, enlarge.
   tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
@@ -217,7 +220,7 @@ export function placeToasts() {
 export function toast(message, { action = null, kind = 'info', duration = 5000, top = false } = {}) {
   const host = document.getElementById('toasts');
   host.classList.toggle('toasts-top', top);
-  const element = h('div', { class: `toast toast-${kind}`, role: kind === 'error' ? 'alert' : 'status' },
+  const element = h('div', { class: `toast toast-${kind}`, role: kind === 'error' || kind === 'warning' ? 'alert' : 'status' },
     h('span', { class: 'toast-text' }, message));
   const close = () => element.remove();
   element.addEventListener('click', close);
@@ -236,8 +239,9 @@ export function toast(message, { action = null, kind = 'info', duration = 5000, 
 
 // Close the visible toast, unless it reports an error. Used when the user
 // starts the next action: the confirmation of the previous one has done its job.
+// A warning (0.14.0: "sembra un doppione") stays too: it must be read.
 export function dismissToasts() {
-  document.querySelectorAll('#toasts .toast:not(.toast-error)').forEach((node) => node.remove());
+  document.querySelectorAll('#toasts .toast:not(.toast-error):not(.toast-warning)').forEach((node) => node.remove());
 }
 
 export function vibrate(pattern = 35) {

@@ -4,9 +4,11 @@ possible duplicates and the pairs marked as different."""
 from __future__ import annotations
 
 import sqlite3
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from .. import dates
 from ..db import get_db, utc_now
 from ..merchant_duplicates import distinct_pairs, find_pairs
 from ..schemas import (
@@ -25,9 +27,15 @@ router = APIRouter(prefix="/merchants", tags=["merchants"], dependencies=[Depend
 # not suggested, nor the Vinted one (0.8.0): after buying an item to resell
 # on Vinted, a purchase for the house from the same merchant must start
 # without it.
+# recent_count (0.14.0): expenses dated from :recent_from on (the last
+# RECENT_DAYS days). The suggestions of "Nuova spesa" follow it, so a shop
+# used every week last year does not stay first forever.
+RECENT_DAYS = 90
 _SELECT = """
 SELECT m.id, m.name,
        (SELECT COUNT(*) FROM expenses e WHERE e.merchant_id = m.id) AS expense_count,
+       (SELECT COUNT(*) FROM expenses e
+         WHERE e.merchant_id = m.id AND e.expense_date >= :recent_from) AS recent_count,
        (SELECT e.category_id FROM expenses e
           JOIN categories c ON c.id = e.category_id AND c.is_active = 1 AND c.system_key IS NULL
          WHERE e.merchant_id = m.id
@@ -90,8 +98,14 @@ def _rename_in_templates(db: sqlite3.Connection, old_name: str, new_name: str) -
             )
 
 
+def _recent_from() -> str:
+    return (dates.today() - timedelta(days=RECENT_DAYS)).isoformat()
+
+
 def _fetch(db: sqlite3.Connection, merchant_id: int) -> sqlite3.Row:
-    row = db.execute(f"{_SELECT} WHERE m.id = ?", (merchant_id,)).fetchone()
+    row = db.execute(
+        f"{_SELECT} WHERE m.id = :id", {"id": merchant_id, "recent_from": _recent_from()}
+    ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Esercente non trovato.")
     return row
@@ -99,8 +113,12 @@ def _fetch(db: sqlite3.Connection, merchant_id: int) -> sqlite3.Row:
 
 @router.get("", response_model=list[MerchantOut])
 def list_merchants(db: sqlite3.Connection = Depends(get_db)):
-    """All merchants, most used first. The client filters as the user types."""
-    rows = db.execute(f"{_SELECT} ORDER BY expense_count DESC, m.name_key").fetchall()
+    """All merchants, most used in the last 90 days first (0.14.0), then
+    most used ever. The client filters as the user types."""
+    rows = db.execute(
+        f"{_SELECT} ORDER BY recent_count DESC, expense_count DESC, m.name_key",
+        {"recent_from": _recent_from()},
+    ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -109,7 +127,7 @@ def list_duplicates(db: sqlite3.Connection = Depends(get_db)):
     """Pairs of merchants whose names look alike (app/merchant_duplicates.py),
     except those marked as different: same name written differently first,
     then one name inside the other, then one letter apart."""
-    merchants = [dict(row) for row in db.execute(_SELECT).fetchall()]
+    merchants = [dict(row) for row in db.execute(_SELECT, {"recent_from": _recent_from()}).fetchall()]
     return find_pairs(merchants, distinct_pairs(db))
 
 

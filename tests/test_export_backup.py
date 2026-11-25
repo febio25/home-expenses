@@ -143,8 +143,9 @@ def test_backup_and_restore_round_trip(client, categories, tmp_path):
     assert client.get(f"{API}/expenses").json() == before
     names = [c["name"] for c in client.get(f"{API}/categories").json()]
     assert "Dopo il backup" not in names
-    # A safety copy of the replaced database is kept next to the live one.
-    assert len(list(tmp_path.glob("pre-restore-*.db"))) == 1
+    # A safety copy of the replaced database is kept with the other copies
+    # (in the data folder itself until 0.13.0).
+    assert len(list((tmp_path / "snapshots").glob("pre-restore-*.db"))) == 1
     assert not list(tmp_path.glob("restore-*.db"))
 
 
@@ -200,7 +201,7 @@ def test_restore_rejects_bad_files(client, categories, tmp_path):
 
     # Nothing was touched by the failed attempts.
     assert len(client.get(f"{API}/expenses").json()) == 1
-    assert not list(tmp_path.glob("pre-restore-*.db"))
+    assert not list(tmp_path.rglob("pre-restore-*.db"))
 
 
 def test_data_survives_a_restart(app, tmp_path):

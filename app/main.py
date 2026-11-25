@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
-from contextlib import asynccontextmanager
+import logging
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 
-from . import __version__
+from . import __version__, copies
 from .config import get_settings
 from .db import connect, init_db
 from .routers import (
@@ -66,10 +69,30 @@ def _render_service_worker() -> str:
     )
 
 
+logger = logging.getLogger(__name__)
+
+
+async def daily_copies() -> None:
+    """Today's copy of the database (0.14.0), checked at start and then
+    every hour while the app runs: no scheduler, no extra process."""
+    while True:
+        try:
+            await run_in_threadpool(copies.ensure_daily_copy)
+        except Exception:  # a failed copy must never stop the app
+            logger.exception("Daily copy failed")
+        await asyncio.sleep(copies.DAILY_CHECK_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()  # creates the database on first start, applies migrations after updates
-    yield
+    task = asyncio.create_task(daily_copies())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 def create_app() -> FastAPI:

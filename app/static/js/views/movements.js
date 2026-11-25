@@ -3,10 +3,11 @@
 // The search box under it (0.9.0) looks through every month instead.
 
 import { api } from '../api.js';
+import { viewCache, sameData } from '../cache.js';
 import { state } from '../store.js';
 import {
   h, icon, mainHead, formatEuro, monthLabel, dayLabel, dayMonthShort, currentMonth, shiftMonth, isPlanned, latestPlannedMonth,
-  PAYMENT_LABELS, loadingBlock, errorBlock,
+  PAYMENT_LABELS, loadingBlock, errorBlock, toast,
 } from '../ui.js';
 
 const MONTH_SHAPE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -170,28 +171,78 @@ export function searchBox({ id, label, initial, onChange }) {
   return box;
 }
 
-// Search results: total and count, then one section per month (newest
-// first) with its total. Same arguments as dayList; row draws the day.
-export function searchResults(items, { dateOf, row, count }) {
-  const sum = (list) => list.reduce((total, item) => total + item.amount_cents, 0);
-  const groups = new Map(); // 'YYYY-MM' -> items, newest month first
-  for (const item of items) {
-    const month = dateOf(item).slice(0, 7);
-    if (!groups.has(month)) groups.set(month, []);
-    groups.get(month).push(item);
+// Rows read per page of a search (0.14.0).
+export const SEARCH_PAGE = 100;
+
+// The first page of a search and the totals of every match: `what` is
+// "expenses" or "incomes". The totals come from the server, so they count
+// every result, not only the rows on screen.
+export async function searchFirstPage(what, text) {
+  const q = encodeURIComponent(text);
+  const [items, totals] = await Promise.all([
+    api.get(`/${what}?q=${q}&limit=${SEARCH_PAGE}`),
+    api.get(`/summary/search/${what}?q=${q}`),
+  ]);
+  return { items, totals };
+}
+
+// Search results (0.14.0: a page at a time): total and count of every
+// match, then one section per month (newest first) with its own total, and
+// «Mostra altre» while rows are left. loadMore(offset) returns the next
+// page, or null when the screen moved on meanwhile. Same dateOf, row and
+// count as dayList.
+export function searchResults({ items, totals }, { dateOf, row, count, loadMore }) {
+  const monthTotals = new Map(totals.months.map((item) => [item.month, item]));
+  const sections = new Map(); // 'YYYY-MM' -> the rows of that month
+  const list = h('div');
+  let shown = 0;
+  const more = h('button', { class: 'btn btn-quiet btn-block search-more', type: 'button', onclick: next });
+
+  function add(page) {
+    for (const item of page) {
+      const month = dateOf(item).slice(0, 7);
+      if (!sections.has(month)) {
+        const info = monthTotals.get(month) || { count: 0, total_cents: 0 };
+        const rows = h('div', { class: 'card rows' });
+        list.append(h('section', {},
+          h('div', { class: 'list-head' },
+            h('h2', { class: 'day-head' },
+              h('span', {}, monthLabel(month)),
+              h('span', { class: 'day-total' }, formatEuro(info.total_cents))),
+            h('span', { class: 'list-head-note' }, count(info.count))),
+          rows));
+        sections.set(month, rows);
+      }
+      sections.get(month).append(row(item));
+    }
+    shown += page.length;
+    const left = totals.count - shown;
+    more.hidden = left <= 0 || page.length === 0;
+    more.disabled = false;
+    more.textContent = `Mostra altre ${Math.min(left, SEARCH_PAGE)} (${shown} di ${totals.count})`;
   }
+
+  async function next() {
+    more.disabled = true;
+    more.textContent = 'Caricamento…';
+    try {
+      const page = await loadMore(shown);
+      if (page) add(page);
+    } catch (error) {
+      more.disabled = false;
+      more.textContent = 'Riprova a caricare le altre';
+      toast(`Non caricate: ${error.message}`, { kind: 'error' });
+    }
+  }
+
+  add(items);
   return [
     h('p', { class: 'month-total' },
-      h('span', { class: 'month-total-amount' }, formatEuro(sum(items))),
-      h('span', { class: 'month-total-count' }, count(items.length))),
+      h('span', { class: 'month-total-amount' }, formatEuro(totals.total_cents)),
+      h('span', { class: 'month-total-count' }, count(totals.count))),
     h('p', { class: 'search-scope' }, 'In tutti i mesi, dalle più recenti'),
-    ...Array.from(groups, ([month, monthItems]) => h('section', {},
-      h('div', { class: 'list-head' },
-        h('h2', { class: 'day-head' },
-          h('span', {}, monthLabel(month)),
-          h('span', { class: 'day-total' }, formatEuro(sum(monthItems)))),
-        h('span', { class: 'list-head-note' }, count(monthItems.length))),
-      h('div', { class: 'card rows' }, monthItems.map(row)))),
+    list,
+    more,
   ];
 }
 
@@ -231,6 +282,8 @@ export async function mount(root, ctx) {
 
   // quiet: refresh in place (back from the background), keeping what is on
   // screen until the new data arrives, and keeping it if the refresh fails.
+  // A month seen before in this session is drawn at once from memory
+  // (cache.js, 0.14.0), then refreshed the same quiet way.
   async function show(nextMonth, { quiet = false } = {}) {
     month = nextMonth;
     const mine = ++request;
@@ -238,29 +291,53 @@ export async function mount(root, ctx) {
     tabSlot.replaceChildren(movementsSwitch('expenses', month, ctx.navigate));
     switcherSlot.replaceChildren(monthSwitcher(month, show, { max: latestPlannedMonth() }));
     switcherSlot.hidden = Boolean(search); // a search looks at every month
-    if (!quiet) body.replaceChildren(loadingBlock());
     const text = search;
-    let expenses;
-    try {
-      expenses = await api.get(text ? `/expenses?q=${encodeURIComponent(text)}` : `/expenses?month=${month}`);
-    } catch (error) {
-      if (!quiet && ctx.isCurrent() && mine === request) body.replaceChildren(errorBlock(error, () => show(month)));
-      return;
-    }
-    if (!ctx.isCurrent() || mine !== request) return; // a newer request took over
+    const current = () => ctx.isCurrent() && mine === request; // a newer request takes over
 
     if (text) {
-      body.replaceChildren(...(expenses.length
-        ? searchResults(expenses, {
+      if (!quiet) body.replaceChildren(loadingBlock());
+      let found;
+      try {
+        found = await searchFirstPage('expenses', text);
+      } catch (error) {
+        if (!quiet && current()) body.replaceChildren(errorBlock(error, () => show(month)));
+        return;
+      }
+      if (!current()) return;
+      body.replaceChildren(...(found.totals.count
+        ? searchResults(found, {
           dateOf: (expense) => expense.expense_date,
           row: (expense) => expenseRow(expense, { showDate: true }),
           count: countExpenses,
+          loadMore: async (offset) => {
+            const page = await api.get(
+              `/expenses?q=${encodeURIComponent(text)}&limit=${SEARCH_PAGE}&offset=${offset}`);
+            return current() ? page : null;
+          },
         })
         : [noResults(`Nessuna spesa trovata per «${text}»`,
           'La ricerca guarda esercente, nota, categoria e importo (per esempio 12,50), in tutti i mesi.')]));
       return;
     }
 
+    const key = `expenses:${month}`;
+    const cached = viewCache.get(key);
+    if (cached) draw(cached);
+    else if (!quiet) body.replaceChildren(loadingBlock());
+    let expenses;
+    try {
+      expenses = await api.get(`/expenses?month=${month}`);
+    } catch (error) {
+      if (!quiet && !cached && current()) body.replaceChildren(errorBlock(error, () => show(month)));
+      return;
+    }
+    if (!current()) return;
+    if (cached && sameData(cached, expenses)) return;
+    viewCache.set(key, expenses);
+    draw(expenses);
+  }
+
+  function draw(expenses) {
     if (expenses.length === 0) {
       body.replaceChildren(h('div', { class: 'empty' },
         h('p', { class: 'empty-title' }, `Nessuna spesa a ${monthLabel(month)}`),
@@ -269,7 +346,6 @@ export async function mount(root, ctx) {
           : null));
       return;
     }
-
     body.replaceChildren(...expenseList(expenses));
   }
 

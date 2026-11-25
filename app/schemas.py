@@ -65,12 +65,21 @@ class CategoryUpdate(BaseModel):
     sort_order: int | None = None
 
 
+class CategoryOrderIn(BaseModel):
+    """PUT /categories/order (0.14.0): every category id, in the new order."""
+
+    ids: list[int] = Field(min_length=1, max_length=200)
+
+
 # --- merchants ----------------------------------------------------------
 
 class MerchantOut(BaseModel):
     id: int
     name: str
     expense_count: int
+    recent_count: int = Field(
+        default=0, description="Expenses of the last 90 days (0.14.0): the list is sorted by it first"
+    )
     last_category_id: int | None
 
 
@@ -153,6 +162,45 @@ class ExpenseOut(BaseModel):
         default=None, description="The Vinted item this expense bought, if any"
     )
     vinted_item_title: str | None = None
+
+
+class ExpenseDuplicateOut(BaseModel):
+    """An expense that looks like the one just saved (0.14.0)."""
+
+    id: int
+    amount_cents: int
+    expense_date: date
+    merchant_name: str | None
+    category_name: str
+    paid_by_name: str
+    created_by_user_id: int
+    created_by_name: str
+    created_at: str
+
+
+class ExpenseCreatedOut(ExpenseOut):
+    """Answer of POST /expenses: the saved expense, plus the ones that look
+    like it (same amount and day, same merchant, or the same category when
+    neither has a merchant). The expense is saved anyway: the list only lets
+    the app say "it looks like a duplicate" next to its "Annulla"."""
+
+    possible_duplicates: list[ExpenseDuplicateOut] = Field(default_factory=list)
+
+
+class SearchMonthOut(BaseModel):
+    month: str
+    count: int
+    total_cents: int
+
+
+class SearchTotalsOut(BaseModel):
+    """GET /summary/search/expenses and /summary/search/incomes (0.14.0):
+    totals of every match of a search, also per month (newest first), while
+    the list itself is read a page at a time (``limit`` and ``offset``)."""
+
+    count: int
+    total_cents: int
+    months: list[SearchMonthOut]
 
 
 # --- recurring expenses ---------------------------------------------------
@@ -359,6 +407,17 @@ class CategoryTotal(BaseModel):
     expense_count: int
 
 
+class ExpectedIncomeOut(BaseModel):
+    """A recurring income due in the month and not registered yet (0.14.0)."""
+
+    recurring_id: int
+    category: str
+    category_name: str
+    received_by_name: str
+    due_date: date
+    amount_cents: int = Field(description="The template's proposed amount")
+
+
 class SummaryOut(BaseModel):
     month: str
     total_cents: int = Field(description="Expenses of the month")
@@ -368,6 +427,11 @@ class SummaryOut(BaseModel):
     income_count: int
     voucher_cents: int = Field(description="Part of income_cents in the category meal_voucher")
     balance_cents: int = Field(description="income_cents - total_cents; may be negative")
+    expected_income_cents: int = Field(
+        default=0,
+        description="Active recurring incomes due in the month and not registered yet (0.14.0)",
+    )
+    expected_incomes: list[ExpectedIncomeOut] = Field(default_factory=list)
 
 
 class MonthTotals(BaseModel):
@@ -708,6 +772,45 @@ class VintedPeriodOut(BaseModel):
     sold_cents: int
     sold_cost_cents: int
     gain_cents: int = Field(description="sold_cents - sold_cost_cents")
+
+
+# --- backups and exports (0.14.0) ------------------------------------------
+
+BackupCopyKind = Literal["daily", "pre_update", "pre_restore"]
+
+
+class BackupCopyOut(BaseModel):
+    name: str = Field(description="File name, to restore it with POST /backups/{name}/restore")
+    kind: BackupCopyKind = Field(
+        description="daily: the copy of the day; pre_update: before an update changed the"
+        " database; pre_restore: the data replaced by a restore"
+    )
+    created_at: str = Field(description="ISO 8601 UTC")
+    size_bytes: int
+
+
+class BackupDownloadOut(BaseModel):
+    at: str = Field(description="ISO 8601 UTC")
+    user_name: str
+
+
+class BackupsOut(BaseModel):
+    last_download: BackupDownloadOut | None = Field(description="The last GET /backup, by anyone")
+    copies: list[BackupCopyOut] = Field(description="Copies kept on the server, newest first")
+
+
+class ExportFileOut(BaseModel):
+    name: str
+    url: str = Field(description="Path of the CSV, relative to the server")
+
+
+class ExportBriefOut(BaseModel):
+    """GET /export/brief (0.14.0): the CSV files of a period and a short
+    text to send with them to an AI assistant: what the files hold, the
+    totals to check them against and the app's conventions."""
+
+    text: str
+    files: list[ExportFileOut]
 
 
 class MessageOut(BaseModel):

@@ -1,6 +1,8 @@
 // Thin wrapper around fetch for the JSON API. The frontend talks to the
 // backend only through these calls.
 
+import { viewCache } from './cache.js';
+
 const BASE = '/api/v1';
 const TIMEOUT_MS = 15000;
 
@@ -49,6 +51,9 @@ async function request(method, path, { json, body, headers = {}, timeout = TIMEO
     }
     throw new ApiError(response.status, detail);
   }
+  // Something changed on the server: the screens drawn from memory load
+  // again from the server next time (cache.js).
+  if (method !== 'GET') viewCache.clear();
   return response;
 }
 
@@ -77,7 +82,9 @@ export const api = {
   },
 
   // Fetch a file (CSV, backup) and hand it to the browser as a download.
-  async download(path, fallbackName) {
+  // The server's file name wins, unless `name` is given (0.14.0: the
+  // backup, named with the phone's time).
+  async download(path, fallbackName, { name = null } = {}) {
     const response = await request('GET', path, { timeout: 60000 });
     const disposition = response.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="([^"]+)"/);
@@ -85,7 +92,7 @@ export const api = {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = match ? match[1] : fallbackName;
+    link.download = name || (match ? match[1] : fallbackName);
     document.body.append(link);
     link.click();
     link.remove();

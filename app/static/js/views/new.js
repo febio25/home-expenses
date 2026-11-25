@@ -100,10 +100,21 @@ export async function mount(root, ctx) {
       document.getElementById('view').scrollTop = 0;
       // A planned expense says so: it will not show up under today.
       const saved = isPlanned(expense.expense_date) ? `Prevista per il ${dayMonthShort(expense.expense_date)}` : 'Salvata';
-      toast(`${saved}: ${formatEuro(expense.amount_cents)}${expense.merchant_name ? ` da ${expense.merchant_name}` : ''}`, {
-        kind: 'success',
-        action: { label: 'Annulla', run: () => undo(expense) },
-      });
+      const twin = lookalike(expense);
+      if (twin) {
+        // 0.14.0: saved anyway; the same «Annulla», in orange, for longer.
+        vibrate([35, 80, 35]);
+        toast(`${saved}, ma sembra un doppione: ${twin}.`, {
+          kind: 'warning',
+          duration: 10000,
+          action: { label: 'Annulla', run: () => undo(expense) },
+        });
+      } else {
+        toast(`${saved}: ${formatEuro(expense.amount_cents)}${expense.merchant_name ? ` da ${expense.merchant_name}` : ''}`, {
+          kind: 'success',
+          action: { label: 'Annulla', run: () => undo(expense) },
+        });
+      }
       // Refresh the autocomplete in the background (new merchant, new counts).
       loadMerchants({ force: true }).then((list) => form.setMerchants(list)).catch(() => {});
     } catch (error) {
@@ -119,6 +130,24 @@ export async function mount(root, ctx) {
       saveButton.disabled = false;
       saveButton.textContent = 'Salva spesa';
     }
+  }
+
+  // "Nastia ha già registrato la stessa spesa alle 18:02" (the newest of
+  // the look-alikes the server found), or null.
+  function lookalike(expense) {
+    const others = expense.possible_duplicates || [];
+    if (!others.length) return null;
+    const other = others[others.length - 1];
+    const created = new Date(other.created_at);
+    const time = created.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const createdDay = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}-${String(created.getDate()).padStart(2, '0')}`;
+    const when = createdDay === todayIso() ? `alle ${time}` : `il ${dayMonthShort(createdDay)} alle ${time}`;
+    const who = other.created_by_user_id === state.me.id
+      ? 'avevi già registrato'
+      : `${other.created_by_name} ha già registrato`;
+    const extra = others.length - 1;
+    const more = extra === 1 ? ' (e un’altra uguale)' : extra > 1 ? ` (e altre ${extra} uguali)` : '';
+    return `${who} la stessa spesa ${when}${more}`;
   }
 
   async function undo(expense) {
@@ -171,6 +200,14 @@ export async function mount(root, ctx) {
       .catch(() => {});
   });
 
+  // The app opened with the lists of last time (store.js, 0.14.0): when the
+  // fresh ones arrive, the suggestions and the category buttons follow.
+  const onLists = () => {
+    if (state.merchants) form.setMerchants(state.merchants);
+    if (state.categories) form.setCategories(state.categories.filter((category) => category.is_active));
+  };
+  window.addEventListener('spese:lists', onLists);
+
   root.classList.add('view-new');
   root.replaceChildren(
     mainHead('Nuova spesa', state.me.display_name),
@@ -198,4 +235,6 @@ export async function mount(root, ctx) {
       },
     });
   }
+
+  return () => window.removeEventListener('spese:lists', onLists);
 }

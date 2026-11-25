@@ -5,13 +5,14 @@
 // search box (0.9.0) looks through every month, as for the expenses.
 
 import { api } from '../api.js';
+import { viewCache, sameData } from '../cache.js';
 import { state } from '../store.js';
 import {
   h, mainHead, formatEuro, monthLabel, dayMonthShort, currentMonth, todayIso, loadingBlock, errorBlock,
 } from '../ui.js';
 import {
   monthSwitcher, monthFromQuery, movementsSwitch, incomesPath, dayList, vintedLine,
-  searchFromQuery, withSearch, searchBox, searchResults, noResults,
+  searchFromQuery, withSearch, searchBox, searchResults, searchFirstPage, noResults, SEARCH_PAGE,
 } from './movements.js';
 
 const countIncomes = (number) => (number === 1 ? '1 entrata' : `${number} entrate`);
@@ -71,7 +72,7 @@ export async function mount(root, ctx) {
     tabSlot, searchSlot, dueBanner, switcherSlot, body,
     h('div', { class: 'footer-bar' }, addLink));
 
-  // quiet: see the same option in movements.js.
+  // quiet, and the month drawn from memory: see show() in movements.js.
   async function show(nextMonth, { quiet = false } = {}) {
     month = nextMonth;
     const mine = ++request;
@@ -80,29 +81,53 @@ export async function mount(root, ctx) {
     switcherSlot.replaceChildren(monthSwitcher(month, show));
     switcherSlot.hidden = Boolean(search); // a search looks at every month
     addLink.href = newIncomePath(month);
-    if (!quiet) body.replaceChildren(loadingBlock());
     const text = search;
-    let incomes;
-    try {
-      incomes = await api.get(text ? `/incomes?q=${encodeURIComponent(text)}` : `/incomes?month=${month}`);
-    } catch (error) {
-      if (!quiet && ctx.isCurrent() && mine === request) body.replaceChildren(errorBlock(error, () => show(month)));
-      return;
-    }
-    if (!ctx.isCurrent() || mine !== request) return; // a newer request took over
+    const current = () => ctx.isCurrent() && mine === request; // a newer request takes over
 
     if (text) {
-      body.replaceChildren(...(incomes.length
-        ? searchResults(incomes, {
+      if (!quiet) body.replaceChildren(loadingBlock());
+      let found;
+      try {
+        found = await searchFirstPage('incomes', text);
+      } catch (error) {
+        if (!quiet && current()) body.replaceChildren(errorBlock(error, () => show(month)));
+        return;
+      }
+      if (!current()) return;
+      body.replaceChildren(...(found.totals.count
+        ? searchResults(found, {
           dateOf: (income) => income.income_date,
           row: (income) => incomeRow(income, { showDate: true }),
           count: countIncomes,
+          loadMore: async (offset) => {
+            const page = await api.get(
+              `/incomes?q=${encodeURIComponent(text)}&limit=${SEARCH_PAGE}&offset=${offset}`);
+            return current() ? page : null;
+          },
         })
         : [noResults(`Nessuna entrata trovata per «${text}»`,
           'La ricerca guarda categoria, nota e importo (per esempio 1850), in tutti i mesi.')]));
       return;
     }
 
+    const key = `incomes:${month}`;
+    const cached = viewCache.get(key);
+    if (cached) draw(cached);
+    else if (!quiet) body.replaceChildren(loadingBlock());
+    let incomes;
+    try {
+      incomes = await api.get(`/incomes?month=${month}`);
+    } catch (error) {
+      if (!quiet && !cached && current()) body.replaceChildren(errorBlock(error, () => show(month)));
+      return;
+    }
+    if (!current()) return;
+    if (cached && sameData(cached, incomes)) return;
+    viewCache.set(key, incomes);
+    draw(incomes);
+  }
+
+  function draw(incomes) {
     if (incomes.length === 0) {
       body.replaceChildren(h('div', { class: 'empty' },
         h('p', { class: 'empty-title' }, `Nessuna entrata a ${monthLabel(month)}`),
