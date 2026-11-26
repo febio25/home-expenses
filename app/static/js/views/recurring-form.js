@@ -22,6 +22,7 @@ function valuesFrom(template) {
     method: template.payment_method,
     note: template.note || '',
     interval: template.interval_months,
+    variable: template.is_variable,
     categoryTouched: true, // the template's category is a deliberate choice
   };
 }

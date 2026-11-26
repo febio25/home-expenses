@@ -22,6 +22,7 @@ function valuesFrom(template) {
     receivedBy: template.received_by_user_id,
     note: template.note || '',
     interval: template.interval_months,
+    variable: template.is_variable,
   };
 }
 

@@ -1035,3 +1035,48 @@ a.btn-text { text-decoration: none; }
 .step-top .step-num { margin-top: 0; }
 .step-top .step-head { flex: 1; min-width: 0; margin: -10px 0; }
 .step-top > .step-title { flex: 1; min-width: 0; }
+
+/* --- 0.17.0: recurring items ------------------------------------------------ */
+
+/* «Quanto costano»: the active items a month and a year (F1). */
+.costs { padding: 12px 14px 10px; margin-bottom: 4px; }
+.costs-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 14px; align-items: baseline;
+  padding: 3px 0; font-variant-numeric: tabular-nums;
+}
+.costs-row > :not(:first-child) { text-align: right; white-space: nowrap; }
+.costs-title {
+  color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.costs-head { padding: 0 0 4px; color: var(--muted); font-size: 0.75rem; }
+.costs-count { color: var(--muted); font-weight: 400; }
+.costs-tilde { color: var(--muted); font-weight: 400; margin-right: 3px; }
+.costs-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.costs-row:not(.costs-head) { font-size: 0.9375rem; }
+.costs-head .costs-name { font-weight: 400; }
+.costs-month { font-weight: 600; }
+.costs-year { color: var(--muted); }
+.costs-row.is-income .costs-month { color: var(--primary); }
+.costs-note { color: var(--muted); font-size: 0.75rem; margin-top: 6px; }
+
+/* «circa 140,00 €»: an estimate (G8). */
+.circa { color: var(--muted); font-size: 0.8125rem; font-weight: 400; }
+.row-amount.is-income { color: var(--primary); }
+.recurring-meta { white-space: normal; }
+.recurring-meta strong { font-weight: 600; color: var(--ink); }
+
+/* Due items: a reminder, in the light yellow of the reminders. */
+.due-card { background: var(--remind); border: 1.5px solid var(--remind-line); }
+.due-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.due-head .row-amount { padding-top: 1px; }
+.due-card .btn-quiet { background: rgb(255 255 255 / 0.6); }
+
+/* «Importo variabile» under the amount of a template. */
+.check { display: flex; align-items: flex-start; gap: 10px; margin: -6px 0 4px; padding: 8px 2px; }
+.check input { width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--primary); flex: none; }
+.check-text { display: flex; flex-direction: column; }
+.check-title { font-weight: 500; }
+.check-hint { color: var(--muted); font-size: 0.8125rem; }
+
+/* Six choices of «Si ripete ogni» (with «4 mesi»): two rows of three. */
+.seg.seg-grid3 { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 3px; }

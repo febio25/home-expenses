@@ -91,6 +91,16 @@ esposta su internet.
   cambiando l'importo se serve. Nulla viene registrato in automatico.
   Si gestiscono da *Impostazioni → Ricorrenti*; il promemoria compare in
   Nuova spesa e, per le entrate, anche nella lista delle entrate.
+  Frequenze: ogni mese, 2, 3, 4 (dalla 0.17.0) o 6 mesi, ogni anno.
+- Dalla 0.17.0 in cima a *Ricorrenti* il riquadro **Quanto costano**: le
+  spese ricorrenti attive (con il segno −) e le entrate ricorrenti attive
+  (con il +) al mese e all'anno, in euro interi. Una spesa ogni 2 mesi conta
+  metà al mese, una annuale un dodicesimo; le sospese non contano. Una
+  ricorrente può avere l'**importo variabile** (bollette, stipendio con
+  straordinari): l'importo salvato è una stima, scritta con «circa», e i
+  totali che la contengono hanno «~». Alla scadenza l'importo si corregge
+  come sempre. Le scadenze vicine sono scritte a parole: «domani», «tra 5
+  giorni», «scaduta 3 giorni fa» (fino a due settimane, poi la data).
 - Sezione *Vinted* (dalla 0.8.0), nella barra in basso: un articolo per ogni
   cosa messa in vendita, comprata per rivenderla o già di casa, con una foto
   facoltativa (miniatura nella lista, tocco per vederla grande). L'articolo
@@ -466,6 +476,14 @@ dell'acquisto, o il giorno in cui erano stati aggiunti); se un articolo non
 era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
+
+Dalla 0.16.0 alla 0.17.0, al primo avvio, il database passa dallo schema 9
+al 10 (prima l'app ne salva una copia, *Prima di un aggiornamento*): spese
+ed entrate ricorrenti ricevono il campo «Importo variabile», spento per
+tutte. Per segnare una bolletta o uno stipendio variabile: *Ricorrenti →*
+la voce *→ Importo variabile*. La 0.16.0 funziona anche sul database della
+0.17.0 (verificato: il campo viene ignorato); un backup della 0.17.0 però
+non si ripristina sulla 0.16.0.
 
 Dalla 0.15.0 alla 0.16.0 il database non cambia (schema 9, invariato):
 cambia solo la grafica, più l'ordine e due icone delle categorie di entrata

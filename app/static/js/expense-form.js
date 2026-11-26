@@ -53,10 +53,26 @@ export function summaryDate(iso, recurring = false) {
   return [elided ? 'L’' : 'Il ', text];
 }
 
+// 0.17.0: «Importo variabile», under the amount of a recurring template
+// (expense or income). Returns { element, input }.
+export function variableCheck(id, checked, hint, onToggle) {
+  const input = h('input', {
+    type: 'checkbox', id, checked,
+    onchange: () => onToggle(input.checked),
+  });
+  const element = h('label', { class: 'check', for: id },
+    input,
+    h('span', { class: 'check-text' },
+      h('span', { class: 'check-title' }, 'Importo variabile'),
+      h('span', { class: 'check-hint' }, hint)));
+  return { element, input };
+}
+
 export const INTERVALS = [
   { value: 1, label: 'Mese', long: 'ogni mese' },
   { value: 2, label: '2 mesi', long: 'ogni 2 mesi' },
   { value: 3, label: '3 mesi', long: 'ogni 3 mesi' },
+  { value: 4, label: '4 mesi', long: 'ogni 4 mesi' }, // 0.17.0
   { value: 6, label: '6 mesi', long: 'ogni 6 mesi' },
   { value: 12, label: 'Anno', long: 'ogni anno' },
 ];
@@ -82,6 +98,7 @@ export function createExpenseForm({
     method: 'card',
     note: '',
     interval: 1,
+    variable: false, // 0.17.0, templates only: the amount is an estimate
     // True once the user picks a category by hand: a merchant suggestion
     // must not override that choice.
     categoryTouched: false,
@@ -106,6 +123,9 @@ export function createExpenseForm({
   const amountBlock = h('div', { class: 'receipt' },
     h('label', { class: 'receipt-label', for: 'expense-amount' }, 'Importo'),
     h('div', { class: 'receipt-line' }, amountInput, h('span', { class: 'receipt-currency', 'aria-hidden': 'true' }, '€')));
+  const variableBox = recurring ? variableCheck('expense-variable', state.variable,
+    'Bollette, consumi: l’importo è una stima, scritta con «circa». Alla scadenza lo correggi.',
+    (checked) => { state.variable = checked; changed(); }) : null;
 
   // --- merchant -----------------------------------------------------------
   const merchantInput = h('input', {
@@ -239,7 +259,7 @@ export function createExpenseForm({
 
   const intervalGroup = recurring ? segmented('interval', INTERVALS, state.interval,
     (value) => { state.interval = value; renderDetailsSummary(); changed(); }) : null;
-  if (intervalGroup) intervalGroup.classList.add('seg-compact');
+  if (intervalGroup) intervalGroup.classList.add('seg-compact', 'seg-grid3');
 
   // One full-width bar sums up the details ("Oggi, paga Nastia, carta") and
   // opens the panel with the controls. The bar is highlighted when something
@@ -297,6 +317,7 @@ export function createExpenseForm({
   // --- assembly -----------------------------------------------------------
   const element = h('div', { class: 'expense-form' },
     amountBlock, amountError,
+    variableBox ? variableBox.element : null,
     h('label', { class: 'label', for: 'expense-merchant' }, 'Esercente'),
     merchantInput, suggestions,
     picker.label,
@@ -328,7 +349,7 @@ export function createExpenseForm({
   // Body for POST /recurring and PATCH /recurring/{id}.
   function toRecurringPayload() {
     const { expense_date: nextDue, ...rest } = toPayload();
-    return { ...rest, next_due: nextDue, interval_months: state.interval };
+    return { ...rest, next_due: nextDue, interval_months: state.interval, is_variable: state.variable };
   }
 
   function validate() {
@@ -360,8 +381,9 @@ export function createExpenseForm({
   function reset(next) {
     Object.assign(state, {
       amount: '', merchant: '', categoryId: null, date: todayIso(), paidBy: me.id,
-      method: 'card', note: '', interval: 1, categoryTouched: false, dateTouched: false, ...next,
+      method: 'card', note: '', interval: 1, variable: false, categoryTouched: false, dateTouched: false, ...next,
     });
+    if (variableBox) variableBox.input.checked = state.variable;
     updateDateLimit();
     amountInput.value = state.amount;
     merchantInput.value = state.merchant;

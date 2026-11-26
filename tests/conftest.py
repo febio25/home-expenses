@@ -61,9 +61,20 @@ def categories(client):
     return {c["name"]: c["id"] for c in client.get("/api/v1/categories").json()}
 
 
+def strip_recurring_variable(conn):
+    """Undo migration 010 on a copy of a backup, to simulate one made
+    before 0.17.0."""
+    for table in ("recurring_expenses", "recurring_incomes"):
+        # a test simulating an even older backup may have dropped the table already
+        columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
+        if "is_variable" in columns:
+            conn.execute(f"ALTER TABLE {table} DROP COLUMN is_variable")
+
+
 def strip_category_icons(conn):
     """Undo migration 009 on a copy of a backup, to simulate one made
-    before 0.15.0."""
+    before 0.15.0 (and what came after it: 0.17.0, variable amounts)."""
+    strip_recurring_variable(conn)
     conn.execute("ALTER TABLE categories DROP COLUMN icon")
 
 

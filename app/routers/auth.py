@@ -24,6 +24,7 @@ from ..security import (
     hash_token,
     read_token,
     set_session_cookie,
+    spend_password_time,
     verify_password,
 )
 
@@ -86,6 +87,8 @@ def login(
     row = db.execute(
         "SELECT id, display_name, password_hash FROM users WHERE username = ?", (key,)
     ).fetchone()
+    if row is None:
+        spend_password_time(body.password)  # same time as a wrong password (0.17.0)
     if row is None or not verify_password(body.password, row["password_hash"]):
         throttle.record_failure(key)
         raise HTTPException(status_code=401, detail="Nome o password non corretti.")

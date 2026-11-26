@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import functools
 import hashlib
 import hmac
 import secrets
@@ -66,6 +67,19 @@ def verify_password(password: str, stored: str) -> bool:
     except (ValueError, TypeError):
         return False
     return hmac.compare_digest(digest, expected)
+
+
+@functools.lru_cache(maxsize=1)
+def _dummy_hash() -> str:
+    return hash_password(secrets.token_urlsafe(16))
+
+
+def spend_password_time(password: str) -> None:
+    """0.17.0: the work of a password check against a hash that matches
+    nothing. Login calls it for a name that does not exist, so the answer
+    takes as long as for a wrong password: the time no longer tells whether
+    a name is registered."""
+    verify_password(password, _dummy_hash())
 
 
 def hash_token(token: str) -> str:

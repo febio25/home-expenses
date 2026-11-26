@@ -35,7 +35,7 @@ _SELECT = """
 SELECT r.id, r.amount_cents, r.category_id, c.name AS category_name,
        c.is_active AS category_active, r.merchant_name, r.note,
        r.paid_by_user_id, u.display_name AS paid_by_name, r.payment_method,
-       r.interval_months, r.day_of_month, r.next_due, r.is_active
+       r.interval_months, r.day_of_month, r.next_due, r.is_active, r.is_variable
   FROM recurring_expenses r
   JOIN categories c ON c.id = r.category_id
   JOIN users u ON u.id = r.paid_by_user_id
@@ -94,7 +94,7 @@ def create_recurring(
     cursor = db.execute(
         "INSERT INTO recurring_expenses (amount_cents, category_id, merchant_name, note,"
         " paid_by_user_id, payment_method, interval_months, day_of_month, next_due,"
-        " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " is_variable, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             amount_cents,
             body.category_id,
@@ -105,6 +105,7 @@ def create_recurring(
             body.interval_months,
             body.next_due.day,
             body.next_due.isoformat(),
+            int(body.is_variable),
             now,
             now,
         ),
@@ -134,6 +135,7 @@ def update_recurring(
         "interval_months": "Indica ogni quanti mesi.",
         "next_due": "Inserisci la prossima scadenza.",
         "is_active": "Indica se è attiva.",
+        "is_variable": "Indica se l'importo è variabile.",
     }
     for field, message in required.items():
         if field in sent and getattr(body, field) is None:
@@ -162,6 +164,8 @@ def update_recurring(
         changes["day_of_month"] = due_day_after_change(body.next_due, current["day_of_month"])
     if "is_active" in sent:
         changes["is_active"] = int(body.is_active)
+    if "is_variable" in sent:
+        changes["is_variable"] = int(body.is_variable)
 
     if changes:
         changes["updated_at"] = utc_now()

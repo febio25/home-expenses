@@ -23,6 +23,13 @@ import httpx
 import pytest
 from playwright.sync_api import sync_playwright
 
+# 0.17.0: the tests, the server they start and the browser (Europe/Rome,
+# see open_phone) share one calendar. Before, between midnight in Italy and
+# midnight UTC an expense prepared «today» by a test fell on the browser's
+# yesterday, and the duplicate warning did not appear.
+os.environ["TZ"] = "Europe/Rome"
+time.tzset()
+
 ROOT = Path(__file__).resolve().parent.parent
 USERS = [{"name": "Fabio", "password": "password-fabio"}, {"name": "Nastia", "password": "password-nastia"}]
 PHONES = {"360": {"width": 360, "height": 740}, "320": {"width": 320, "height": 640}}

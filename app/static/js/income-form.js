@@ -5,7 +5,7 @@
 // on the expense screen.
 
 import { h, todayIso } from './ui.js';
-import { AMOUNT_SHAPE, INTERVALS } from './expense-form.js';
+import { AMOUNT_SHAPE, INTERVALS, variableCheck } from './expense-form.js';
 import { createCategoryPicker } from './category-picker.js';
 
 // options: { users, categories, me, values, onChange, onCategoryName, variant }
@@ -18,7 +18,7 @@ export function createIncomeForm({
 }) {
   const recurring = variant === 'recurring';
   const state = {
-    amount: '', category: null, date: todayIso(), receivedBy: me.id, note: '', interval: 1,
+    amount: '', category: null, date: todayIso(), receivedBy: me.id, note: '', interval: 1, variable: false,
     ...values,
   };
 
@@ -42,6 +42,9 @@ export function createIncomeForm({
     h('label', { class: 'receipt-label', for: 'income-amount' }, recurring ? 'Importo previsto' : 'Importo'),
     h('div', { class: 'receipt-line' }, amountInput,
       h('span', { class: 'receipt-currency', 'aria-hidden': 'true' }, '€')));
+  const variableBox = recurring ? variableCheck('income-variable', state.variable,
+    'Stipendio con straordinari o bonus: l’importo è una stima, scritta con «circa». Alla scadenza lo correggi.',
+    (checked) => { state.variable = checked; onChange(); }) : null;
 
   // --- category (fixed list, icons from 0.15.0) -------------------------------
   const categoryError = h('p', { class: 'field-error', hidden: true });
@@ -86,7 +89,7 @@ export function createIncomeForm({
   const intervalGroup = recurring
     ? segmented(INTERVALS, state.interval, 'income-interval-label', (value) => { state.interval = value; })
     : null;
-  if (intervalGroup) intervalGroup.classList.add('seg-compact');
+  if (intervalGroup) intervalGroup.classList.add('seg-compact', 'seg-grid3');
   const receivedGroup = segmented(
     users.map((user) => ({ value: user.id, label: user.display_name })),
     state.receivedBy, 'income-received-label', (value) => { state.receivedBy = value; });
@@ -102,6 +105,7 @@ export function createIncomeForm({
 
   const element = h('div', { class: 'income-form' },
     amountBlock, amountError,
+    variableBox ? variableBox.element : null,
     picker.label,
     categoryGrid, categoryError,
     h('label', { class: 'label', for: 'income-date' }, recurring ? 'Prossima scadenza' : 'Data'), dateInput,
@@ -145,7 +149,7 @@ export function createIncomeForm({
   // Body for POST /recurring-incomes and PATCH /recurring-incomes/{id}.
   function toRecurringPayload() {
     const { income_date: nextDue, ...rest } = toPayload();
-    return { ...rest, next_due: nextDue, interval_months: state.interval };
+    return { ...rest, next_due: nextDue, interval_months: state.interval, is_variable: state.variable };
   }
 
   function showAmountError(message) {

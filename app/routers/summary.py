@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
+from fractions import Fraction
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -17,6 +18,7 @@ from ..schemas import (
     IncomeSummaryOut,
     MonthTotals,
     PeriodTotalsOut,
+    RecurringCostsOut,
     SearchTotalsOut,
     SummaryOut,
 )
@@ -134,6 +136,38 @@ def search_income_totals(
     """The same as /summary/search/expenses, for the incomes."""
     where, params = income_filters(None, None, None, q)
     return _search_totals(db, INCOME_SELECT, where, params, "income_date")
+
+
+def _cents(value: Fraction) -> int:
+    """A fraction of a cent rounded half up: 1/3 of 1000 cents is 333."""
+    return int(value + Fraction(1, 2)) if value >= 0 else -int(-value + Fraction(1, 2))
+
+
+def _recurring_side(db: sqlite3.Connection, table: str) -> dict:
+    rows = db.execute(
+        f"SELECT amount_cents, interval_months, is_variable FROM {table} WHERE is_active = 1"
+    ).fetchall()
+    # Exact fractions, rounded once at the end: three items every 3 months
+    # of 1,00 € each make 1,00 € a month, not 0,99 €.
+    month = sum((Fraction(row["amount_cents"], row["interval_months"]) for row in rows), Fraction(0))
+    return {
+        "count": len(rows),
+        "month_cents": _cents(month),
+        "year_cents": _cents(month * 12),
+        "has_variable": any(row["is_variable"] for row in rows),
+    }
+
+
+@router.get("/recurring", response_model=RecurringCostsOut)
+def recurring_costs(db: sqlite3.Connection = Depends(get_db)):
+    """0.17.0: what the active recurring expenses cost, and the active
+    recurring incomes bring, a month and a year. An item every 2 months
+    counts half a month, a yearly one a twelfth. Suspended items are left
+    out. ``has_variable``: some amounts are estimates (the app writes «~»)."""
+    return {
+        "expenses": _recurring_side(db, "recurring_expenses"),
+        "incomes": _recurring_side(db, "recurring_incomes"),
+    }
 
 
 @router.get("/incomes", response_model=IncomeSummaryOut)

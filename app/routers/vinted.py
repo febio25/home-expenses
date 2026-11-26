@@ -13,30 +13,29 @@ day it was published there, NULL until then (status "unlisted", "Da
 pubblicare" in the app). An item also has the details and the text of its
 ad, written with Claude by hand (app/vinted_listing.py), and the history of
 its asking price on Vinted.
+
+0.17.0: the photos and the summary of the section have modules of their
+own (vinted_photos.py, vinted_summary.py), with the same address prefix;
+the items, their purchase and sale, and their ad stay here.
 """
 
 from __future__ import annotations
 
-import base64
-import binascii
-import hashlib
 import sqlite3
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from .. import dates, vinted_listing
-from ..dates import check_expense_date, month_bounds, resolve_range
+from ..dates import check_expense_date
 from ..db import get_db, utc_now
-from ..schemas import (
+from ..schemas import ExpenseCreate, ExpenseOut, IncomeCreate, IncomeOut
+from ..security import current_user
+from ..validation import clean_note, require_amount
+from ..vinted_schemas import (
     VINTED_CONDITIONS,
     VINTED_KINDS,
     VINTED_TEXT_LIMITS,
-    ExpenseCreate,
-    ExpenseOut,
-    IncomeCreate,
-    IncomeOut,
-    MonthTotals,
     VintedItemCreate,
     VintedItemOut,
     VintedItemUpdate,
@@ -45,18 +44,12 @@ from ..schemas import (
     VintedListingParseIn,
     VintedListingParseOut,
     VintedListingRequestOut,
-    VintedPeriodOut,
-    VintedPhotoIn,
     VintedPurchaseIn,
     VintedSaleIn,
-    VintedSummaryOut,
 )
-from ..security import current_user
-from ..validation import clean_note, require_amount
 from .expenses import EXPENSE_SELECT, insert_expense
 from .incomes import INCOME_SELECT, income_out, insert_income
 from .merchants import prune_merchant
-from .summary import trend_skeleton
 
 router = APIRouter(prefix="/vinted", tags=["vinted"])
 
@@ -66,9 +59,6 @@ VINTED = "vinted"
 # "Vendite": a sale recorded there before 0.8.0 moves to "vinted" once
 # linked to an item.
 SALE = "sale"
-MAX_IMAGE_BYTES = 3 * 1024 * 1024
-MAX_THUMB_BYTES = 300 * 1024
-JPEG_MAGIC = b"\xff\xd8\xff"
 UNLINKED_LIMIT = 60
 
 ITEM_SELECT = """
@@ -707,102 +697,6 @@ def cancel_sale(
     db.commit()
 
 
-# --- photos --------------------------------------------------------------------
-
-
-def _decode_jpeg(text: str, limit: int, what: str) -> bytes:
-    try:
-        data = base64.b64decode(text, validate=True)
-    except (binascii.Error, ValueError) as error:
-        raise HTTPException(status_code=422, detail=f"{what} non valida.") from error
-    if not data.startswith(JPEG_MAGIC):
-        raise HTTPException(status_code=422, detail=f"{what}: serve un'immagine JPEG.")
-    if len(data) > limit:
-        raise HTTPException(status_code=413, detail=f"{what} troppo grande.")
-    return data
-
-
-@router.put("/items/{item_id}/photo", response_model=VintedItemOut)
-def put_photo(
-    item_id: int,
-    body: VintedPhotoIn,
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    """Set or replace the photo. The client sends it already resized (the
-    app: about 1200 px and a 160 px thumbnail, JPEG, no location data)."""
-    _item_row(db, item_id)
-    image = _decode_jpeg(body.image, MAX_IMAGE_BYTES, "Foto")
-    thumb = _decode_jpeg(body.thumb, MAX_THUMB_BYTES, "Miniatura")
-    token = hashlib.sha256(image).hexdigest()[:16]
-    now = utc_now()
-    db.execute(
-        "INSERT INTO vinted_photos (item_id, token, created_at, image, thumb) VALUES (?, ?, ?, ?, ?)"
-        " ON CONFLICT(item_id) DO UPDATE SET token = excluded.token,"
-        " created_at = excluded.created_at, image = excluded.image, thumb = excluded.thumb",
-        (item_id, token, now, image, thumb),
-    )
-    db.execute("UPDATE vinted_items SET updated_at = ? WHERE id = ?", (now, item_id))
-    db.commit()
-    return fetch_item(db, item_id)
-
-
-def _photo(db: sqlite3.Connection, item_id: int, column: str, version: str | None) -> Response:
-    row = db.execute(
-        f"SELECT token, {column} AS data FROM vinted_photos WHERE item_id = ?", (item_id,)
-    ).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Foto non trovata.")
-    # The app asks with ?v=<token>: that address never changes content, so the
-    # phone keeps it. Without (or with an old) token, always ask again.
-    cache = "private, max-age=31536000, immutable" if version == row["token"] else "private, no-cache"
-    return Response(
-        content=row["data"],
-        media_type="image/jpeg",
-        headers={"Cache-Control": cache, "ETag": f'"{row["token"]}-{column}"'},
-    )
-
-
-@router.get(
-    "/items/{item_id}/photo",
-    response_class=Response,
-    responses={200: {"content": {"image/jpeg": {}}}},
-)
-def get_photo(
-    item_id: int,
-    v: str | None = Query(None, description="Photo token from the item: makes the image cacheable"),
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    return _photo(db, item_id, "image", v)
-
-
-@router.get(
-    "/items/{item_id}/photo/thumb",
-    response_class=Response,
-    responses={200: {"content": {"image/jpeg": {}}}},
-)
-def get_thumb(
-    item_id: int,
-    v: str | None = Query(None, description="Photo token from the item: makes the image cacheable"),
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    return _photo(db, item_id, "thumb", v)
-
-
-@router.delete("/items/{item_id}/photo", status_code=204)
-def delete_photo(
-    item_id: int,
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    _item_row(db, item_id)
-    db.execute("DELETE FROM vinted_photos WHERE item_id = ?", (item_id,))
-    db.execute("UPDATE vinted_items SET updated_at = ? WHERE id = ?", (utc_now(), item_id))
-    db.commit()
-
-
 # --- what can still be linked ------------------------------------------------------
 
 
@@ -833,121 +727,3 @@ def unlinked_incomes(
         (VINTED, SALE, UNLINKED_LIMIT),
     ).fetchall()
     return [income_out(row) for row in rows]
-
-
-# --- summary ---------------------------------------------------------------------
-
-
-def _section_totals(db: sqlite3.Connection, start: date, end: date) -> dict:
-    """Sales, Vinted expenses (purchases and extras) and their difference
-    between two dates; the items sold in them, with what they cost."""
-    window = (start.isoformat(), end.isoformat())
-    sales = db.execute(
-        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count FROM incomes"
-        " WHERE category = ? AND income_date >= ? AND income_date <= ?",
-        (VINTED, *window),
-    ).fetchone()
-    spent = db.execute(
-        "SELECT COALESCE(SUM(e.amount_cents), 0) AS cents, COUNT(*) AS count,"
-        "       COALESCE(SUM(v.id IS NOT NULL), 0) AS purchases"
-        "  FROM expenses e"
-        "  JOIN categories c ON c.id = e.category_id AND c.system_key = ?"
-        "  LEFT JOIN vinted_items v ON v.purchase_expense_id = e.id"
-        " WHERE e.expense_date >= ? AND e.expense_date <= ?",
-        (VINTED, *window),
-    ).fetchone()
-    sold = db.execute(
-        "SELECT COUNT(*) AS count, COALESCE(SUM(i.amount_cents), 0) AS cents,"
-        "       COALESCE(SUM(e.amount_cents), 0) AS cost"
-        "  FROM vinted_items v"
-        "  JOIN incomes i ON i.id = v.sale_income_id"
-        "  LEFT JOIN expenses e ON e.id = v.purchase_expense_id"
-        " WHERE i.income_date >= ? AND i.income_date <= ?",
-        window,
-    ).fetchone()
-    return {
-        "sales_cents": sales["cents"],
-        "sales_count": sales["count"],
-        "expense_cents": spent["cents"],
-        "expense_count": spent["count"],
-        "purchase_count": spent["purchases"],
-        "extra_count": spent["count"] - spent["purchases"],
-        "balance_cents": sales["cents"] - spent["cents"],
-        "sold_count": sold["count"],
-        "sold_cents": sold["cents"],
-        "sold_cost_cents": sold["cost"],
-        "gain_cents": sold["cents"] - sold["cost"],
-    }
-
-
-@router.get("/summary", response_model=VintedSummaryOut)
-def vinted_summary(
-    month: str = Query(..., description="YYYY-MM"),
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    """The month of the section: sales, Vinted expenses (purchases and
-    extras) and their difference; the items sold in the month with what
-    they cost; the sales of the calendar year, for the DAC7 thresholds."""
-    start, end = month_bounds(month)
-    year = start.year
-    yearly = db.execute(
-        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count FROM incomes"
-        " WHERE category = ? AND income_date >= ? AND income_date <= ?",
-        (VINTED, f"{year:04d}-01-01", f"{year:04d}-12-31"),
-    ).fetchone()
-    return {
-        "month": month,
-        **_section_totals(db, start, end),
-        "year": year,
-        "year_sales_count": yearly["count"],
-        "year_sales_cents": yearly["cents"],
-    }
-
-
-@router.get("/summary/period", response_model=VintedPeriodOut)
-def vinted_period(
-    date_from: date = Query(..., alias="from", description="First day, YYYY-MM-DD"),
-    date_to: date = Query(..., alias="to", description="Last day, YYYY-MM-DD, included"),
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    """The section over any period ("Esplora", 0.9.0): the figures of the
-    month summary, between two dates."""
-    start, end = resolve_range(None, date_from, date_to)
-    return {"start": start, "end": end, **_section_totals(db, start, end)}
-
-
-@router.get("/summary/trend", response_model=list[MonthTotals])
-def vinted_trend(
-    month: str = Query(..., description="Last month of the window, YYYY-MM"),
-    months: int = Query(6, ge=1, le=24, description="How many months, ending with `month`"),
-    user: sqlite3.Row = Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
-):
-    """Vinted sales (as ``income_*``) and Vinted expenses (as ``expense_*``)
-    of each month in the window, oldest first, with zeros where nothing was
-    recorded: the same shape as GET /summary/trend."""
-    start, end, totals = trend_skeleton(month, months)
-    window = (start.isoformat(), end.isoformat())
-    for prefix, query in (
-        (
-            "income",
-            "SELECT substr(income_date, 1, 7) AS month, SUM(amount_cents) AS cents,"
-            " COUNT(*) AS count FROM incomes"
-            " WHERE category = ? AND income_date >= ? AND income_date <= ? GROUP BY 1",
-        ),
-        (
-            "expense",
-            "SELECT substr(e.expense_date, 1, 7) AS month, SUM(e.amount_cents) AS cents,"
-            " COUNT(*) AS count FROM expenses e"
-            " JOIN categories c ON c.id = e.category_id AND c.system_key = ?"
-            " WHERE e.expense_date >= ? AND e.expense_date <= ? GROUP BY 1",
-        ),
-    ):
-        for row in db.execute(query, (VINTED, *window)).fetchall():
-            totals[row["month"]][f"{prefix}_cents"] = row["cents"]
-            totals[row["month"]][f"{prefix}_count"] = row["count"]
-    for item in totals.values():
-        item["balance_cents"] = item["income_cents"] - item["expense_cents"]
-    return list(totals.values())

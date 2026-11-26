@@ -107,6 +107,30 @@ export function euroParts(cents, { signed = false } = {}) {
   return [h('span', { class: 'eur-num' }, text.slice(0, cut)), h('span', { class: 'eur' }, text.slice(cut))];
 }
 
+// 0.17.0: whole euros, for estimates ("252 €", "3.029 €").
+const euroWhole = new Intl.NumberFormat('it-IT', {
+  style: 'currency', currency: 'EUR', useGrouping: 'always', maximumFractionDigits: 0, minimumFractionDigits: 0,
+});
+
+export function formatEuroWhole(cents) {
+  return euroWhole.format(Math.round(cents / 100));
+}
+
+// 0.17.0: a date near today in words, for the due dates of the recurring
+// items: "oggi", "domani", "dopodomani", "tra 5 giorni", "ieri", "3 giorni
+// fa", up to two weeks; further away null (the caller writes the date).
+export function relativeDay(iso) {
+  const [y1, m1, d1] = todayIso().split('-').map(Number);
+  const [y2, m2, d2] = iso.split('-').map(Number);
+  const days = Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
+  if (Math.abs(days) > 14) return null;
+  if (days === 0) return 'oggi';
+  if (days === 1) return 'domani';
+  if (days === 2) return 'dopodomani';
+  if (days === -1) return 'ieri';
+  return days > 0 ? `tra ${days} giorni` : `${-days} giorni fa`;
+}
+
 // A difference: "+1.250,00 €", "−80,00 €" (true minus sign), "0,00 €".
 export function formatSignedEuro(cents) {
   if (!cents) return euro.format(0);

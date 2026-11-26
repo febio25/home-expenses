@@ -17,7 +17,7 @@ import re
 from datetime import date
 
 from .money import AmountError, format_cents, parse_amount
-from .schemas import (
+from .vinted_schemas import (
     VINTED_ANY_KIND_FIELDS,
     VINTED_CONDITIONS,
     VINTED_DETAIL_LABELS,

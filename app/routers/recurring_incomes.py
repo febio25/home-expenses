@@ -40,7 +40,7 @@ router = APIRouter(
 _SELECT = """
 SELECT r.id, r.amount_cents, r.category, r.note,
        r.received_by_user_id, u.display_name AS received_by_name,
-       r.interval_months, r.day_of_month, r.next_due, r.is_active
+       r.interval_months, r.day_of_month, r.next_due, r.is_active, r.is_variable
   FROM recurring_incomes r
   JOIN users u ON u.id = r.received_by_user_id
 """
@@ -97,8 +97,8 @@ def create_recurring_income(
     now = utc_now()
     cursor = db.execute(
         "INSERT INTO recurring_incomes (amount_cents, category, note, received_by_user_id,"
-        " interval_months, day_of_month, next_due, created_at, updated_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " interval_months, day_of_month, next_due, is_variable, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             amount_cents,
             body.category,
@@ -107,6 +107,7 @@ def create_recurring_income(
             body.interval_months,
             body.next_due.day,
             body.next_due.isoformat(),
+            int(body.is_variable),
             now,
             now,
         ),
@@ -134,6 +135,7 @@ def update_recurring_income(
         "interval_months": "Indica ogni quanti mesi.",
         "next_due": "Inserisci la prossima scadenza.",
         "is_active": "Indica se è attiva.",
+        "is_variable": "Indica se l'importo è variabile.",
     }
     for field, message in required.items():
         if field in sent and getattr(body, field) is None:
@@ -156,6 +158,8 @@ def update_recurring_income(
         changes["day_of_month"] = due_day_after_change(body.next_due, current["day_of_month"])
     if "is_active" in sent:
         changes["is_active"] = int(body.is_active)
+    if "is_variable" in sent:
+        changes["is_variable"] = int(body.is_variable)
 
     if changes:
         changes["updated_at"] = utc_now()
