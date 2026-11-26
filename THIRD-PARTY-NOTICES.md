@@ -4,13 +4,14 @@ Spese di Casa includes the following third-party material.
 
 ## Tabler Icons
 
-The SVG paths of eight icons (`cloud-upload`, `building-store`, `coin-euro`,
-`stack-2`, `share`, `pencil`, `clipboard-text`, `download`, from version
-3.52.0) are copied into `app/static/js/ui.js`, where they draw the filters of
-the Vinted list, the steps of an item's ad and the buttons of the exports.
-Since 0.15.0 the icons of the categories (58 outline icons, same version,
-listed in `app/category_icons.py`) are copied into
-`app/static/js/category-icons.js`. Source: https://tabler.io/icons,
+The SVG paths of nine icons (`building-store`, `coin-euro`, `stack-2`,
+`share`, `pencil`, `clipboard-text`, `download` from version 3.52.0;
+`hourglass` and `tag` from version 3.53.0, since 0.16.0) are copied into
+`app/static/js/ui.js`, where they draw the bottom bar's Vinted tab, the
+filters of the Vinted list, the steps of an item's ad and the buttons of
+the exports. Since 0.15.0 the icons of the categories (outline icons,
+listed in `app/category_icons.py`; `cash-coin` added in 0.16.0 from
+version 3.53.0) are copied into `app/static/js/category-icons.js`. Source: https://tabler.io/icons,
 https://github.com/tabler/tabler-icons
 
 ```text

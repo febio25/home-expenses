@@ -95,7 +95,9 @@ export function thumbButton(item, { large = false, caption = '' } = {}) {
     onclick: (event) => { event.preventDefault(); openPhoto(item, caption); },
   },
   h('img', { src: photoUrl(item, { thumb: true }), alt: '', loading: 'lazy', decoding: 'async' }),
-  large ? h('span', { class: 'thumb-zoom', 'aria-hidden': 'true' }, icon('expand')) : soldMark(item));
+  // 0.16.0: the large photo of the item screen has a pencil beside it
+  // (vinted-item.js) in place of the enlarge mark; a tap still enlarges.
+  large ? null : soldMark(item));
 }
 
 // Start of a row without a photo: a dashed frame, part of the row's link.

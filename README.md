@@ -43,7 +43,12 @@ esposta su internet.
   Vinted e la registrazione di una spesa ricorrente; *Esplora* conta fino a
   oggi. Se per la stessa spesa esiste anche un modello ricorrente, alla
   scadenza si tocca «Salta» invece di «Registra», per non averla due volte.
-- Lista dei movimenti per mese, con modifica ed eliminazione.
+- Lista dei movimenti per mese, con modifica ed eliminazione. Dalla 0.16.0
+  il mese è uno scontrino: una striscia sola con il bordo strappato sopra e
+  sotto, ogni giorno aperto dal suo nome in maiuscolo tra due tratteggi e
+  chiuso dal suo «Subtotale» (sempre, anche con una sola spesa). Lo stesso
+  scontrino si usa per le spese di una categoria e per i risultati della
+  ricerca, divisi per mese.
 - Ricerca nei movimenti (dalla 0.9.0): la barra sotto «Spese | Entrate» cerca
   in tutti i mesi, senza badare a maiuscole e accenti, in esercente, nota,
   categoria, importo («12,50») e titolo dell'articolo Vinted collegato (per
@@ -55,7 +60,12 @@ esposta su internet.
 - Entrate (stipendi, rimborsi, regali, vendite, buoni pasto), separate dalle
   spese: in *Movimenti* l'interruttore «Spese | Entrate» passa da una lista
   all'altra, e «Nuova entrata» le registra con importo, categoria da una
-  lista fissa, data, chi l'ha ricevuta e nota.
+  lista fissa, data, chi l'ha ricevuta e nota. Dalla 0.16.0 le entrate del
+  mese sono impaginate come una busta paga: in alto periodo, numero di
+  entrate e ricorrenti ancora *attese* nel mese; poi la tabella Data |
+  Voce | Importo, dalla più recente; in fondo il «Totale entrate» e la parte
+  in buoni pasto. Le categorie sono nell'ordine Stipendio, Buoni pasto,
+  Vinted, Rimborsi, Regali, Vendite, Altro.
 - Riepilogo mensile: spese del mese, entrate e differenza (entrate meno
   spese), un piccolo istogramma degli ultimi 6 mesi con entrate e spese
   affiancate e la differenza sotto ogni mese, poi grafico a ciambella e totale
@@ -97,8 +107,15 @@ esposta su internet.
   non lo segni come pubblicato su Vinted («Segna come pubblicato», un tocco:
   oggi; la data si corregge dalla scheda). «In vendita da …» conta da quel
   giorno. In cima alla lista quattro filtri a icona con il numero: da
-  pubblicare (nuvola), in vendita (negozio), venduti (moneta), tutti (pila,
-  ritirati compresi). La ricerca guarda tutti gli articoli.
+  pubblicare (clessidra, dalla 0.16.0), in vendita (negozio), venduti
+  (moneta), tutti (pila, ritirati compresi). La ricerca guarda tutti gli
+  articoli.
+- Scheda dell'articolo (dalla 0.16.0): accanto alla foto, alti quanto lei,
+  il titolo (fino a quattro righe, poi «…»; toccandolo si rinomina) e i
+  prezzi (prezzo su Vinted e pagato; da venduto, prezzo di vendita e
+  guadagno). La matita sulla foto apre «Cambia foto · Togli foto»; toccando
+  la foto la si vede grande. Lo stato («In vendita da 4 giorni») è accanto
+  al titolo *Su Vinted*.
 - *Annunci con Claude* (0.10.0, rivisti nella 0.11.0): nella scheda
   dell'articolo tre passi (dettagli, «Condividi con Claude», «Incolla
   risposta»); la risposta incollata riempie titolo, descrizione, prezzo e
@@ -449,6 +466,11 @@ dell'acquisto, o il giorno in cui erano stati aggiunti); se un articolo non
 era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
+
+Dalla 0.15.0 alla 0.16.0 il database non cambia (schema 9, invariato):
+cambia solo la grafica, più l'ordine e due icone delle categorie di entrata
+(Vinted con l'etichetta, Vendite con banconota e moneta). Tornare alla
+0.15.0 resta possibile, anche con un backup fatto dalla 0.16.0.
 
 Dalla 0.14.0 alla 0.15.0, al primo avvio, il database passa dallo schema 8
 al 9 (prima l'app ne salva una copia, *Prima di un aggiornamento*): ogni

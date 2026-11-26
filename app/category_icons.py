@@ -38,12 +38,14 @@ DEFAULT_ICON = "category"
 # Icons of the fixed income categories (codes of INCOME_CATEGORIES).
 INCOME_CATEGORY_ICONS: dict[str, str] = {
     "salary": "briefcase",
+    "meal_voucher": "tools-kitchen-2",
+    # 0.16.0: the price tag of the Vinted tab in the bottom bar; «Vendite»
+    # takes a banknote with a coin (Tabler has no hand holding a coin).
+    "vinted": "tag",
     "refund": "receipt-refund",
     "gift": "gift",
-    "sale": "tag",
-    "vinted": "hanger",
+    "sale": "cash-coin",
     "other": "dots",
-    "meal_voucher": "tools-kitchen-2",
 }
 
 # Every name the interface must be able to draw.

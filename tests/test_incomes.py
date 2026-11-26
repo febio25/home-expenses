@@ -27,13 +27,14 @@ def users_of(client):
 
 def test_categories_are_a_fixed_list(client, anon):
     assert client.get(f"{API}/incomes/categories").json() == [
+        # 0.16.0: ordered by use; Vinted with the tag of its tab, Vendite a banknote with a coin.
         {"code": "salary", "name": "Stipendio", "icon": "briefcase"},
+        {"code": "meal_voucher", "name": "Buoni pasto", "icon": "tools-kitchen-2"},
+        {"code": "vinted", "name": "Vinted", "icon": "tag"},
         {"code": "refund", "name": "Rimborsi", "icon": "receipt-refund"},
         {"code": "gift", "name": "Regali", "icon": "gift"},
-        {"code": "sale", "name": "Vendite", "icon": "tag"},
-        {"code": "vinted", "name": "Vinted", "icon": "hanger"},  # 0.8.0, next to the other sales
+        {"code": "sale", "name": "Vendite", "icon": "cash-coin"},
         {"code": "other", "name": "Altro", "icon": "dots"},
-        {"code": "meal_voucher", "name": "Buoni pasto", "icon": "tools-kitchen-2"},  # 0.7.0, last as asked
     ]
     assert anon.get(f"{API}/incomes/categories").status_code == 401
 

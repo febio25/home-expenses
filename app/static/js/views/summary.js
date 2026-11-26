@@ -8,7 +8,7 @@ import { api } from '../api.js';
 import { viewCache, sameData } from '../cache.js';
 import { state } from '../store.js';
 import {
-  h, mainHead, formatEuro, formatSignedEuro, formatShare, monthLabel, currentMonth, latestPlannedMonth,
+  h, mainHead, formatEuro, euroParts, formatSignedEuro, formatShare, monthLabel, currentMonth, latestPlannedMonth,
   dayMonthShort, loadingBlock, errorBlock,
 } from '../ui.js';
 import { monthSwitcher, monthFromQuery } from './movements.js';
@@ -104,7 +104,7 @@ export function donut(summary, title, palette) {
     `${slice.name} ${formatShare(slice.cents, summary.total_cents)}`).join(', ');
   // No figure in the hole: the total is written right above the chart, and a
   // five-digit amount did not fit inside the ring.
-  return h('figure', { class: 'card donut', 'aria-label': `${title}: ${label}` },
+  return h('figure', { class: 'donut', 'aria-label': `${title}: ${label}` },
     h('div', { class: 'donut-ring' }, ring),
     legend);
 }
@@ -385,7 +385,7 @@ export async function mount(root, ctx) {
     const parts = [
       h('div', { class: 'receipt receipt-total' },
         h('span', { class: 'receipt-label' }, `Spese di ${monthLabel(month)}`),
-        h('span', { class: 'receipt-figure' }, formatEuro(summary.total_cents)),
+        h('span', { class: 'receipt-figure' }, ...euroParts(summary.total_cents)),
         h('span', { class: 'receipt-sub' }, summary.expense_count ? expenseCount : 'Nessuna spesa')),
       balanceCard(summary, month),
     ];
@@ -405,9 +405,11 @@ export async function mount(root, ctx) {
     const largest = summary.by_category[0].total_cents;
     body.replaceChildren(
       ...parts,
-      donut(summary, 'Spese del mese per categoria', EXPENSE_SLICES),
+      // 0.16.0: the title introduces ring and bars, in one card.
       h('h2', { class: 'section-title' }, 'Spese per categoria'),
-      h('ul', { class: 'card bars' }, summary.by_category.map((category) => {
+      h('div', { class: 'card cat-card' },
+        donut(summary, 'Spese del mese per categoria', EXPENSE_SLICES),
+        h('ul', { class: 'bars' }, summary.by_category.map((category) => {
         const fill = h('span', { class: 'bar-fill' });
         // Bars are relative to the largest category, so the top one is full width.
         fill.style.width = `${Math.max(2, Math.round((category.total_cents / largest) * 100))}%`;
@@ -424,7 +426,7 @@ export async function mount(root, ctx) {
             h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›')),
           h('span', { class: 'bar-track' }, fill),
           h('span', { class: 'bar-meta' }, `${share} del mese, ${count}`)));
-      })));
+        }))));
   }
 
   ctx.onResume(({ longAway }) => { if (longAway) show(month, { quiet: true }); });

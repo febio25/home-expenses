@@ -35,19 +35,21 @@ const ICONS = {
   up: '<path d="M5 15l7-7 7 7"/>',
   down: '<path d="M5 9l7 7 7-7"/>',
   // 0.8.0, Vinted section: price tag (tab), search, camera, photo, close,
-  // sold check, enlarge.
-  tag: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
+  // sold check (0.16.0: the enlarge mark gave way to a pencil).
+  // 0.16.0: Tabler `tag` (MIT, see below), the same drawing as the «Vinted»
+  // income category, so the tab and the category look alike.
+  tag: '<path d="M6.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M3 6v5.172a2 2 0 0 0 .586 1.414l7.71 7.71a2.41 2.41 0 0 0 3.408 0l5.592 -5.592a2.41 2.41 0 0 0 0 -3.408l-7.71 -7.71a2 2 0 0 0 -1.414 -.586h-5.172a3 3 0 0 0 -3 3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
-  expand: '<path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/>',
   // 0.10.0, the filters of the Vinted list: not on Vinted yet, on sale,
-  // sold, all. From Tabler Icons 3.52.0 (cloud-upload, building-store,
-  // coin-euro, stack-2), MIT License, Copyright (c) 2020-2026 Pawel Kuna:
-  // see THIRD-PARTY-NOTICES.md.
-  'cloud-upload': '<path d="M7 18a4.6 4.4 0 0 1 0 -9a5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7h-1"/><path d="M9 15l3 -3l3 3"/><path d="M12 12l0 9"/>',
+  // sold, all. From Tabler Icons 3.52.0 (building-store, coin-euro,
+  // stack-2), MIT License, Copyright (c) 2020-2026 Pawel Kuna: see
+  // THIRD-PARTY-NOTICES.md. 0.16.0: «Da pubblicare» is an hourglass
+  // (Tabler `hourglass`, 3.53.0), in place of the cloud with the arrow.
+  hourglass: '<path d="M6.5 7h11"/><path d="M6.5 17h11"/><path d="M6 20v-2a6 6 0 1 1 12 0v2a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1"/><path d="M6 4v2a6 6 0 1 0 12 0v-2a1 1 0 0 0 -1 -1h-10a1 1 0 0 0 -1 1"/>',
   store: '<path d="M3 21l18 0"/><path d="M3 7v1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1h-18l2 -4h14l2 4"/><path d="M5 21l0 -10.15"/><path d="M19 21l0 -10.15"/><path d="M9 21v-4a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v4"/>',
   'coin-euro': '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M14.401 8c-.669 -.628 -1.5 -1 -2.401 -1c-2.21 0 -4 2.239 -4 5s1.79 5 4 5c.9 0 1.731 -.372 2.4 -1"/><path d="M7 10.5h4"/><path d="M7 13.5h4"/>',
   stack: '<path d="M12 4l-8 4l8 4l8 -4l-8 -4"/><path d="M4 12l8 4l8 -4"/><path d="M4 16l8 4l8 -4"/>',
@@ -92,6 +94,17 @@ const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR'
 
 export function formatEuro(cents) {
   return euro.format(cents / 100);
+}
+
+// 0.16.0: a big total with a smaller, lighter «€» (styled by .eur in
+// app.css), as in the amount field of Nuova spesa. The text read is the
+// same as formatEuro's: "897,57 €" with its no-break space.
+// signed: "+1.250,00 €" / "−80,00 €", as formatSignedEuro.
+export function euroParts(cents, { signed = false } = {}) {
+  const text = signed ? formatSignedEuro(cents) : formatEuro(cents);
+  const cut = text.lastIndexOf('\u00a0');
+  if (cut < 0) return [text];
+  return [h('span', { class: 'eur-num' }, text.slice(0, cut)), h('span', { class: 'eur' }, text.slice(cut))];
 }
 
 // A difference: "+1.250,00 €", "−80,00 €" (true minus sign), "0,00 €".

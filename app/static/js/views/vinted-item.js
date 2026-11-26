@@ -16,7 +16,7 @@
 
 import { api } from '../api.js';
 import {
-  h, icon, toast, vibrate, confirmDialog, promptDialog, choiceDialog, openDialog, formatEuro, PAYMENT_LABELS,
+  h, icon, toast, vibrate, confirmDialog, promptDialog, choiceDialog, openDialog, formatEuro, euroParts, PAYMENT_LABELS,
   todayIso, loadingBlock, errorBlock,
 } from '../ui.js';
 import { thumbButton, choosePhotoFor } from '../photo.js';
@@ -105,6 +105,41 @@ function report(error, prefix) {
   toast(`${prefix}: ${error.network ? 'connessione assente.' : error.message}`, { kind: 'error' });
 }
 
+// The item's title in the space beside the photo (0.16.0): whole when it
+// fits above the prices (four lines at most), otherwise cut at a word with
+// «…». The last few letters and the pencil are kept together (.hero-title-
+// tail, no wrap), so the pencil never starts a line by itself.
+const TITLE_LINES = 4;
+const TAIL_LETTERS = 6;
+
+function fitTitle(full, { title, text, tail, side, prices }) {
+  const lineHeight = parseFloat(getComputedStyle(title).lineHeight) || 20;
+  const gap = parseFloat(getComputedStyle(side).rowGap) || 0;
+  const room = Math.min(TITLE_LINES * lineHeight, side.clientHeight - prices.offsetHeight - gap) + 1;
+  const show = (shown, cut) => {
+    const words = shown + (cut ? '…' : '');
+    const split = Math.max(0, words.length - TAIL_LETTERS - (cut ? 1 : 0));
+    // the tail starts inside the last word, so a break never falls between it and the pencil
+    const start = Math.max(split, words.lastIndexOf(' ') + 1);
+    text.textContent = words.slice(0, start);
+    tail.firstChild.textContent = words.slice(start);
+  };
+  show(full, false);
+  if (title.offsetHeight <= room) return;
+  // the longest start of the title that fits, then back to the last whole word
+  let low = 1;
+  let high = full.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    show(full.slice(0, middle).trimEnd(), true);
+    if (title.offsetHeight <= room) low = middle; else high = middle - 1;
+  }
+  let cut = full.slice(0, low);
+  const space = cut.lastIndexOf(' ');
+  if (space > 0 && full[low] !== ' ') cut = cut.slice(0, space);
+  show(cut.trimEnd().replace(/[\s,.;:·-]+$/, ''), true);
+}
+
 export async function mount(root, ctx) {
   const itemId = Number(ctx.params[0]);
   root.append(loadingBlock());
@@ -178,20 +213,61 @@ export async function mount(root, ctx) {
     run(() => api.patch(`/vinted/items/${itemId}`, { title }), 'Non rinominato');
   }
 
+  // 0.16.0: the photo's pencil opens «Cambia foto · Togli foto»; a tap on
+  // the photo itself still shows it full size.
+  async function photoMenu() {
+    const choice = await choiceDialog({
+      title: 'Foto',
+      options: [{ value: 'change', label: 'Cambia foto' }, { value: 'remove', label: 'Togli foto' }],
+    });
+    if (choice === 'change') changePhoto();
+    else if (choice === 'remove') removePhoto();
+  }
+
+  // The figures beside the photo: the asking price, large, with what was
+  // paid; once sold, the sale price and the gain; with no price yet, only
+  // what was paid.
+  function heroPrices() {
+    const paid = item.purchase ? `pagato ${formatEuro(item.purchase.amount_cents)}` : 'già nostro';
+    if (item.status === 'sold') {
+      return h('p', { class: 'hero-prices' },
+        h('span', { class: 'hero-price' }, ...euroParts(item.sale.amount_cents)),
+        h('span', { class: 'hero-paid' }, 'venduto', item.purchase ? ' · guadagno ' : null,
+          item.purchase ? gainSpan(item.gain_cents) : null));
+    }
+    const price = item.listing && item.listing.price_cents;
+    return h('p', { class: 'hero-prices' },
+      price ? h('span', { class: 'hero-price' }, ...euroParts(price)) : null,
+      h('span', { class: 'hero-paid' }, paid));
+  }
+
+  // Photo on the left; on the right, exactly as tall as the photo, the title
+  // and the prices. The title takes up to four lines and ends in «…» when
+  // longer (fitTitle); the pencil always follows its last word, never alone
+  // on a line. A tap anywhere on the title renames the item.
   function hero() {
     const photo = item.photo
-      ? thumbButton(item, { large: true, caption: captionOf(item) })
+      ? h('div', { class: 'hero-photo' },
+        thumbButton(item, { large: true, caption: captionOf(item) }),
+        h('button', {
+          class: 'hero-photo-edit', type: 'button', 'aria-label': 'Cambia o togli la foto', onclick: photoMenu,
+        }, icon('pencil')))
       : h('button', { class: 'thumb thumb-large is-empty', type: 'button', 'aria-label': 'Aggiungi foto', onclick: changePhoto },
         icon('camera'), h('span', { class: 'thumb-add' }, 'Aggiungi foto'));
-    return h('div', { class: 'art-hero' },
-      photo,
-      h('div', { class: 'art-hero-main' },
-        h('h2', { class: 'art-hero-title' }, item.title),
-        h('span', { class: `status${item.status === 'listed' ? '' : ` is-${item.status}`}` }, statusText(item)),
-        h('div', { class: 'art-hero-actions' },
-          h('button', { class: 'btn-text', type: 'button', onclick: rename }, 'Rinomina'),
-          item.photo ? h('button', { class: 'btn-text', type: 'button', onclick: changePhoto }, 'Cambia foto') : null,
-          item.photo ? h('button', { class: 'btn-text', type: 'button', onclick: removePhoto }, 'Togli foto') : null)));
+    const text = h('span', { class: 'hero-title-text' });
+    const tail = h('span', { class: 'hero-title-tail' }, h('span', {}), icon('pencil'));
+    const title = h('h2', { class: 'hero-title' },
+      h('button', { class: 'hero-title-btn', type: 'button', 'aria-label': `Rinomina: ${item.title}`, onclick: rename },
+        text, tail));
+    const prices = heroPrices();
+    const side = h('div', { class: 'hero-side' }, title, prices);
+    const element = h('div', { class: 'art-hero' }, photo, side);
+    const fit = () => fitTitle(item.title, { title, text, tail, side, prices });
+    new ResizeObserver((entries, observer) => {
+      if (!element.isConnected) { observer.disconnect(); return; }
+      fit();
+    }).observe(side);
+    return element;
   }
 
   // --- on Vinted ------------------------------------------------------------------------
@@ -241,9 +317,10 @@ export async function mount(root, ctx) {
         item.status === 'unlisted' ? null
           : h('button', { class: 'btn-text', type: 'button', onclick: editListingDay }, 'Imposta data'));
     }
-    let meta = null;
-    if (item.status === 'listed') meta = `In vendita ${sinceLabel(daysBetween(item.listed_on))}`;
-    else if (item.status === 'sold') meta = `Venduto dopo ${daysWord(daysBetween(item.listed_on, item.sale.income_date))}`;
+    // 0.16.0: how long it has been on sale is in the label beside «Su Vinted».
+    const meta = item.status === 'sold'
+      ? `venduto dopo ${daysWord(daysBetween(item.listed_on, item.sale.income_date))}`
+      : 'data di pubblicazione';
     return h('div', { class: 'card info' },
       h('span', { class: 'info-main' },
         h('span', { class: 'info-text' }, `Dal ${dayMonth(item.listed_on)}`),
@@ -313,13 +390,15 @@ export async function mount(root, ctx) {
       copy ? textButton('Copia', () => copyText(text, copyLabel)) : null);
   }
 
+  // 0.16.0: the number on the line of the title; text and button below use
+  // the whole width of the card.
   function step(number, done, title, ...body) {
     return h('div', { class: 'info step' },
-      h('span', { class: `step-num${done ? ' is-done' : ''}`, 'aria-hidden': 'true' }, done ? icon('check') : String(number)),
-      h('div', { class: 'step-main' },
+      h('div', { class: 'step-top' },
+        h('span', { class: `step-num${done ? ' is-done' : ''}`, 'aria-hidden': 'true' }, done ? icon('check') : String(number)),
         h('span', { class: 'sr-only' }, done ? 'Fatto: ' : `Passo ${number}: `),
-        ...(Array.isArray(title) ? title : [h('span', { class: 'step-title' }, title)]),
-        ...body));
+        ...(Array.isArray(title) ? title : [h('span', { class: 'step-title' }, title)])),
+      h('div', { class: 'step-main' }, ...body));
   }
 
   function stepsCard() {
@@ -599,7 +678,10 @@ export async function mount(root, ctx) {
     }, item.status === 'withdrawn' ? 'Annulla il ritiro' : 'Ritira dalla vendita');
     content.replaceChildren(
       hero(),
-      h('h2', { class: 'section-title' }, 'Su Vinted'), vintedCard(),
+      h('div', { class: 'section-head' },
+        h('h2', { class: 'section-title' }, 'Su Vinted'),
+        h('span', { class: `status${item.status === 'listed' ? '' : ` is-${item.status}`}` }, statusText(item))),
+      vintedCard(),
       listing ? h('h2', { class: 'section-title' }, 'Annuncio') : null, listing,
       h('h2', { class: 'section-title' }, 'Acquisto'), purchaseCard(),
       h('h2', { class: 'section-title' }, 'Vendita'), saleCard(),

@@ -6,7 +6,7 @@ import { api } from '../api.js';
 import { viewCache, sameData } from '../cache.js';
 import { state } from '../store.js';
 import {
-  h, icon, mainHead, formatEuro, monthLabel, dayLabel, dayMonthShort, currentMonth, shiftMonth, isPlanned, latestPlannedMonth,
+  h, icon, mainHead, formatEuro, euroParts, monthLabel, dayLabel, dayMonthShort, currentMonth, shiftMonth, isPlanned, latestPlannedMonth,
   PAYMENT_LABELS, loadingBlock, errorBlock, toast,
 } from '../ui.js';
 
@@ -92,28 +92,53 @@ function expenseRow(expense, { showCategory = true, showDate = false } = {}) {
     h('span', { class: 'row-amount' }, formatEuro(expense.amount_cents)));
 }
 
-// Total of the list, then one section per day (newest first) with its total.
-// items must be newest first; dateOf gives an item's date, row draws it and
-// count words the number ("3 spese"). Shared by expenses and incomes.
+// Total of a list above its receipt: "897,57 €" with the € small, and the
+// count ("29 spese").
+export function listTotal(cents, countText) {
+  return h('p', { class: 'month-total' },
+    h('span', { class: 'month-total-amount' }, ...euroParts(cents)),
+    h('span', { class: 'month-total-count' }, countText));
+}
+
+// 0.16.0, «scontrino vero»: the whole list is one strip of receipt paper,
+// torn at the top and at the bottom. Each section (a day, or a month in the
+// search results) opens with its name in capitals between two dashed lines,
+// like a department on a till receipt, and closes with its «Subtotale», even
+// with a single row: the same place every time. No line between the rows of
+// a section. sections: [{ title, items, note }], rows drawn by row.
+function receipt(sections, row) {
+  const sum = (list) => list.reduce((total, item) => total + item.amount_cents, 0);
+  return h('div', { class: 'roll' }, sections.map(({ title, items, cents = null, note = null }) => {
+    const rows = h('div', { class: 'rows' }, items.map(row));
+    const subtotal = h('span', { class: 'day-total' }, formatEuro(cents ?? sum(items)));
+    const section = h('section', { class: 'day' },
+      h('h2', { class: 'day-head' }, h('span', {}, title)),
+      rows,
+      h('p', { class: 'day-sub' },
+        h('span', {}, note ? `Subtotale · ${note}` : 'Subtotale'),
+        subtotal));
+    section.rows = rows; // the search adds the rows of a later page here
+    return section;
+  }));
+}
+
+// Total of the list, then one section per day (newest first), on the
+// receipt. items must be newest first; dateOf gives an item's date, row
+// draws it and count words the number ("3 spese"). Shared by the expenses
+// and the search results; the incomes have a sheet of their own (0.16.0,
+// payslip() in incomes.js).
 // showTotal: false where the screen already shows the total above.
 export function dayList(items, { dateOf, row, count, showTotal = true }) {
-  const sum = (list) => list.reduce((total, item) => total + item.amount_cents, 0);
   const groups = new Map(); // date -> items, insertion order = newest day first
   for (const item of items) {
     const date = dateOf(item);
     if (!groups.has(date)) groups.set(date, []);
     groups.get(date).push(item);
   }
-  const total = h('p', { class: 'month-total' },
-    h('span', { class: 'month-total-amount' }, formatEuro(sum(items))),
-    h('span', { class: 'month-total-count' }, count(items.length)));
+  const total = items.reduce((sum, item) => sum + item.amount_cents, 0);
   return [
-    ...(showTotal ? [total] : []), // the callers spread this into replaceChildren: no nulls
-    ...Array.from(groups, ([date, dayItems]) => h('section', { class: 'day' },
-      h('h2', { class: 'day-head' },
-        h('span', {}, dayLabel(date)),
-        h('span', { class: 'day-total' }, formatEuro(sum(dayItems)))),
-      h('div', { class: 'card rows' }, dayItems.map(row)))),
+    ...(showTotal ? [listTotal(total, count(items.length))] : []), // spread into replaceChildren: no nulls
+    receipt(Array.from(groups, ([date, dayItems]) => ({ title: dayLabel(date), items: dayItems })), row),
   ];
 }
 
@@ -191,27 +216,26 @@ export async function searchFirstPage(what, text) {
 // «Mostra altre» while rows are left. loadMore(offset) returns the next
 // page, or null when the screen moved on meanwhile. Same dateOf, row and
 // count as dayList.
-export function searchResults({ items, totals }, { dateOf, row, count, loadMore }) {
+// sheet: the incomes, on the plain sheet of their list (no torn edges).
+export function searchResults({ items, totals }, { dateOf, row, count, loadMore, sheet = false }) {
   const monthTotals = new Map(totals.months.map((item) => [item.month, item]));
   const sections = new Map(); // 'YYYY-MM' -> the rows of that month
-  const list = h('div');
+  const list = h('div', { class: sheet ? 'roll is-sheet' : 'roll' });
   let shown = 0;
   const more = h('button', { class: 'btn btn-quiet btn-block search-more', type: 'button', onclick: next });
 
+  // The same receipt as the month's list, one section per month: its
+  // subtotal and count are of every match in that month (from the server).
   function add(page) {
     for (const item of page) {
       const month = dateOf(item).slice(0, 7);
       if (!sections.has(month)) {
         const info = monthTotals.get(month) || { count: 0, total_cents: 0 };
-        const rows = h('div', { class: 'card rows' });
-        list.append(h('section', {},
-          h('div', { class: 'list-head' },
-            h('h2', { class: 'day-head' },
-              h('span', {}, monthLabel(month)),
-              h('span', { class: 'day-total' }, formatEuro(info.total_cents))),
-            h('span', { class: 'list-head-note' }, count(info.count))),
-          rows));
-        sections.set(month, rows);
+        const [section] = receipt([{
+          title: monthLabel(month), items: [], cents: info.total_cents, note: count(info.count),
+        }], row).children;
+        list.append(section);
+        sections.set(month, section.rows);
       }
       sections.get(month).append(row(item));
     }
@@ -237,9 +261,7 @@ export function searchResults({ items, totals }, { dateOf, row, count, loadMore 
 
   add(items);
   return [
-    h('p', { class: 'month-total' },
-      h('span', { class: 'month-total-amount' }, formatEuro(totals.total_cents)),
-      h('span', { class: 'month-total-count' }, count(totals.count))),
+    listTotal(totals.total_cents, count(totals.count)),
     h('p', { class: 'search-scope' }, 'In tutti i mesi, dalle più recenti'),
     list,
     more,

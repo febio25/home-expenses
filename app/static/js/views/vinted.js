@@ -20,7 +20,7 @@ import {
 import { thumbButton, thumbPlaceholder } from '../photo.js';
 
 const FILTERS = [
-  { id: 'unlisted', query: null, label: 'Da pubblicare', icon: 'cloud-upload' },
+  { id: 'unlisted', query: null, label: 'Da pubblicare', icon: 'hourglass' },
   { id: 'listed', query: 'in-vendita', label: 'In vendita', icon: 'store' },
   { id: 'sold', query: 'venduti', label: 'Venduti', icon: 'coin-euro' },
   { id: 'all', query: 'tutti', label: 'Tutti', icon: 'stack' },

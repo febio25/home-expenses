@@ -11,11 +11,15 @@ import {
 import { copyText, canShareFiles, shareFilesWithText } from '../vinted-listing.js';
 import { categoryIcon, DEFAULT_ICON, ICON_LABELS } from '../category-icons.js';
 
+// 0.16.0: the sections are the rows of one list, each with a short hint and
+// an arrow that turns down when the section opens.
 function section(title, hint, content, { open = false } = {}) {
-  return h('details', { class: 'card settings-section', open },
+  return h('details', { class: 'settings-section', open },
     h('summary', { class: 'settings-summary' },
-      h('span', { class: 'settings-title' }, title),
-      h('span', { class: 'settings-hint' }, hint)),
+      h('span', { class: 'settings-text-block' },
+        h('span', { class: 'settings-title' }, title),
+        h('span', { class: 'settings-hint' }, hint)),
+      h('span', { class: 'settings-go', 'aria-hidden': 'true' }, '›')),
     h('div', { class: 'settings-body' }, content));
 }
 
@@ -735,15 +739,16 @@ export async function mount(root, ctx) {
 
   root.replaceChildren(
     head(ctx),
-    h('a', { class: 'card settings-link', href: '/ricorrenti', dataset: { link: '' } },
-      h('span', {},
-        h('span', { class: 'settings-title' }, 'Ricorrenti'),
-        h('span', { class: 'settings-hint' }, 'Abbonamenti, bollette e stipendi da registrare con un tocco')),
-      h('span', { class: 'settings-go', 'aria-hidden': 'true' }, '›')),
-    section('Categorie', 'Aggiungi, rinomina, riordina, disattiva', categories.element),
-    section('Esercenti', 'Cerca, rinomina, unisci i doppioni', merchants.element),
-    section('Esporta CSV', 'Spese, entrate, articoli Vinted o tutto: da scaricare o condividere', exportSection()),
-    section('Backup e ripristino', 'Scarica, ricarica, copie automatiche', backupSection()),
-    section('Account', 'Password, uscita', accountSection(users, ctx.navigate)),
+    h('div', { class: 'card settings-list' },
+      h('a', { class: 'settings-link', href: '/ricorrenti', dataset: { link: '' } },
+        h('span', { class: 'settings-text-block' },
+          h('span', { class: 'settings-title' }, 'Ricorrenti'),
+          h('span', { class: 'settings-hint' }, 'Abbonamenti, bollette, stipendi')),
+        h('span', { class: 'settings-go', 'aria-hidden': 'true' }, '›')),
+      section('Categorie', 'Nomi, icone, ordine', categories.element),
+      section('Esercenti', 'Rinomina, unisci i doppioni', merchants.element),
+      section('Esporta CSV', 'Da scaricare o condividere', exportSection()),
+      section('Backup e ripristino', 'Copie del database e ripristino', backupSection()),
+      section('Account', 'Password, uscita', accountSection(users, ctx.navigate))),
     version);
 }

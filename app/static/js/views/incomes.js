@@ -8,10 +8,10 @@ import { api } from '../api.js';
 import { viewCache, sameData } from '../cache.js';
 import { state } from '../store.js';
 import {
-  h, mainHead, formatEuro, monthLabel, dayMonthShort, currentMonth, todayIso, loadingBlock, errorBlock,
+  h, mainHead, formatEuro, euroParts, monthLabel, dayMonthShort, currentMonth, todayIso, loadingBlock, errorBlock,
 } from '../ui.js';
 import {
-  monthSwitcher, monthFromQuery, movementsSwitch, incomesPath, dayList, vintedLine,
+  monthSwitcher, monthFromQuery, movementsSwitch, incomesPath, vintedLine,
   searchFromQuery, withSearch, searchBox, searchResults, searchFirstPage, noResults, SEARCH_PAGE,
 } from './movements.js';
 
@@ -37,6 +37,56 @@ export function incomeRow(income, { showDate = false } = {}) {
     h('span', { class: 'row-amount' }, formatEuro(income.amount_cents)));
 }
 
+// Recurring incomes still expected in the month: active, with the next
+// occurrence inside it. The same rule as the «Attese» of the Riepilogo
+// (expected_incomes in app/routers/summary.py).
+export function expectedIn(templates, month) {
+  return templates.filter((t) => t.is_active && t.next_due.slice(0, 7) === month).length;
+}
+
+// "15/11"
+function dayMonthDigits(iso) {
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+}
+
+// 0.16.0, «busta paga»: the incomes of a month on a plain sheet, like a pay
+// slip. A head with the period, the number of incomes and the ones still
+// expected; a table Data | Voce | Importo, newest first; at the bottom the
+// total in its own box (the «netto» of the slip), then the part in meal
+// vouchers. expected: a number, or null to leave that box out. Shared by
+// Movimenti → Entrate and Riepilogo → Entrate.
+export function payslip(incomes, { month, expected = null }) {
+  const total = incomes.reduce((sum, income) => sum + income.amount_cents, 0);
+  const vouchers = incomes.filter((income) => income.category === 'meal_voucher')
+    .reduce((sum, income) => sum + income.amount_cents, 0);
+  const box = (label, value) => h('div', { class: 'slip-box' },
+    h('span', { class: 'slip-label' }, label), h('span', { class: 'slip-value' }, value));
+  const rows = incomes.map((income) => {
+    const href = income.vinted_item_id ? `/vinted/articolo/${income.vinted_item_id}` : `/entrate/${income.id}`;
+    const meta = [income.received_by_name, income.note].filter(Boolean).join(' · ');
+    return h('a', { class: 'slip-row', href, dataset: { link: '' } },
+      h('span', { class: 'slip-date' }, dayMonthDigits(income.income_date)),
+      h('span', { class: 'row-main' },
+        h('span', { class: 'row-title' }, income.category_name),
+        meta ? h('span', { class: 'row-meta' }, meta) : null,
+        income.vinted_item_id ? vintedLine(income.vinted_item_title) : null),
+      h('span', { class: 'row-amount' }, formatEuro(income.amount_cents)));
+  });
+  return h('div', { class: 'slip' },
+    h('div', { class: 'slip-head' },
+      box('Periodo', monthLabel(month)),
+      box('Entrate', String(incomes.length)),
+      expected === null ? null : box('Attese', String(expected))),
+    h('div', { class: 'slip-cols', 'aria-hidden': 'true' },
+      h('span', {}, 'Data'), h('span', {}, 'Voce'), h('span', {}, 'Importo')),
+    h('div', { class: 'slip-rows' }, rows),
+    h('p', { class: 'slip-total' },
+      h('span', { class: 'slip-total-label' }, 'Totale entrate'),
+      h('span', { class: 'slip-total-amount' }, ...euroParts(total))),
+    vouchers ? h('p', { class: 'slip-note' },
+      h('span', {}, 'di cui buoni pasto'), h('span', {}, formatEuro(vouchers))) : null);
+}
+
 export async function mount(root, ctx) {
   let month = monthFromQuery(ctx.query);
   let search = searchFromQuery(ctx.query);
@@ -56,9 +106,13 @@ export async function mount(root, ctx) {
   // Recurring incomes due today or earlier (a salary): the same yellow
   // reminder as on "Nuova spesa", loaded in the background.
   const dueBanner = h('a', { class: 'due-banner', href: '/ricorrenti', dataset: { link: '' }, hidden: true });
+  let templates = null; // for «Attese» in the sheet, once loaded
+  let drawn = null; // the incomes on screen, drawn again when templates arrive
   function loadDueBanner() {
-    api.get('/recurring-incomes').then((templates) => {
+    api.get('/recurring-incomes').then((loaded) => {
       if (!ctx.isCurrent()) return;
+      templates = loaded;
+      if (drawn && drawn.month === month && !search) draw(drawn.incomes);
       const due = templates.filter((t) => t.is_active && t.next_due <= todayIso()).length;
       dueBanner.hidden = !due;
       if (!due) return;
@@ -99,6 +153,7 @@ export async function mount(root, ctx) {
           dateOf: (income) => income.income_date,
           row: (income) => incomeRow(income, { showDate: true }),
           count: countIncomes,
+          sheet: true,
           loadMore: async (offset) => {
             const page = await api.get(
               `/incomes?q=${encodeURIComponent(text)}&limit=${SEARCH_PAGE}&offset=${offset}`);
@@ -128,6 +183,7 @@ export async function mount(root, ctx) {
   }
 
   function draw(incomes) {
+    drawn = { month, incomes };
     if (incomes.length === 0) {
       body.replaceChildren(h('div', { class: 'empty' },
         h('p', { class: 'empty-title' }, `Nessuna entrata a ${monthLabel(month)}`),
@@ -139,11 +195,7 @@ export async function mount(root, ctx) {
           'Nuova entrata ricorrente')));
       return;
     }
-    body.replaceChildren(...dayList(incomes, {
-      dateOf: (income) => income.income_date,
-      row: (income) => incomeRow(income),
-      count: countIncomes,
-    }));
+    body.replaceChildren(payslip(incomes, { month, expected: templates ? expectedIn(templates, month) : null }));
   }
 
   ctx.onResume(({ longAway }) => {

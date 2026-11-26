@@ -6,17 +6,17 @@
 // always in the light green they have in the Riepilogo chart.
 
 import { api } from '../api.js';
-import { h, formatEuro, formatShare, monthLabel, loadingBlock, errorBlock } from '../ui.js';
-import { monthSwitcher, monthFromQuery, dayList } from './movements.js';
+import { h, formatEuro, euroParts, formatShare, monthLabel, loadingBlock, errorBlock } from '../ui.js';
+import { monthSwitcher, monthFromQuery } from './movements.js';
 import { donut, INCOME_SLICES, summaryPath, incomeSummaryPath } from './summary.js';
-import { incomeRow, newIncomePath } from './incomes.js';
+import { payslip, expectedIn, newIncomePath } from './incomes.js';
 
 const countLabel = (number) => (number === 1 ? '1 entrata' : `${number} entrate`);
 
 // Not links: the incomes behind each total are listed right below.
 function categoryBars(summary) {
   const largest = summary.by_category[0].total_cents;
-  return h('ul', { class: 'card bars' }, summary.by_category.map((category) => {
+  return h('ul', { class: 'bars' }, summary.by_category.map((category) => {
     const fill = h('span', { class: 'bar-fill' });
     // Bars are relative to the largest category, so the top one is full width.
     fill.style.width = `${Math.max(2, Math.round((category.total_cents / largest) * 100))}%`;
@@ -51,10 +51,12 @@ export async function mount(root, ctx) {
     if (!quiet) body.replaceChildren(loadingBlock());
     let summary;
     let incomes;
+    let templates;
     try {
-      [summary, incomes] = await Promise.all([
+      [summary, incomes, templates] = await Promise.all([
         api.get(`/summary/incomes?month=${month}`),
         api.get(`/incomes?month=${month}`),
+        api.get('/recurring-incomes'),
       ]);
     } catch (error) {
       if (!quiet && ctx.isCurrent() && month === nextMonth) body.replaceChildren(errorBlock(error, () => show(month)));
@@ -64,7 +66,7 @@ export async function mount(root, ctx) {
 
     const receipt = h('div', { class: 'receipt receipt-total' },
       h('span', { class: 'receipt-label' }, `Entrate di ${monthLabel(month)}`),
-      h('span', { class: 'receipt-figure' }, formatEuro(summary.total_cents)),
+      h('span', { class: 'receipt-figure' }, ...euroParts(summary.total_cents)),
       h('span', { class: 'receipt-sub' }, summary.income_count ? countLabel(summary.income_count) : 'Nessuna entrata'));
     if (!summary.income_count) {
       body.replaceChildren(receipt, h('div', { class: 'empty' },
@@ -76,16 +78,13 @@ export async function mount(root, ctx) {
 
     body.replaceChildren(
       receipt,
-      donut(summary, 'Entrate del mese per categoria', INCOME_SLICES),
+      // 0.16.0: the title first, then ring and bars in one card.
       h('h2', { class: 'section-title' }, 'Entrate per categoria'),
-      categoryBars(summary),
+      h('div', { class: 'card cat-card' },
+        donut(summary, 'Entrate del mese per categoria', INCOME_SLICES),
+        categoryBars(summary)),
       h('h2', { class: 'section-title' }, 'Tutte le entrate'),
-      ...dayList(incomes, {
-        dateOf: (income) => income.income_date,
-        row: incomeRow,
-        count: countLabel,
-        showTotal: false, // the receipt above already has it
-      }));
+      payslip(incomes, { month, expected: expectedIn(templates, month) }));
   }
 
   ctx.onResume(({ longAway }) => { if (longAway) show(month, { quiet: true }); });

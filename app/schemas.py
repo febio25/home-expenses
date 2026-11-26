@@ -297,16 +297,18 @@ class RecurringRegistered(BaseModel):
 # version. Codes are stored in incomes.category; a name can change freely.
 INCOME_CATEGORIES = {
     "salary": "Stipendio",
-    "refund": "Rimborsi",
-    "gift": "Regali",
-    "sale": "Vendite",
-    # 0.8.0: sales on Vinted, linked to an item of the Vinted section.
-    "vinted": "Vinted",
-    "other": "Altro",
     # 0.7.0: the month's meal vouchers, registered as one income a month
     # (purchases paid with them are recorded as normal expenses, in full).
     "meal_voucher": "Buoni pasto",
+    # 0.8.0: sales on Vinted, linked to an item of the Vinted section.
+    "vinted": "Vinted",
+    "refund": "Rimborsi",
+    "gift": "Regali",
+    "sale": "Vendite",
+    "other": "Altro",
 }
+# 0.16.0: the order follows how often each one is used (Stipendio, Buoni
+# pasto, Vinted first, Altro last).
 IncomeCategory = Literal[tuple(INCOME_CATEGORIES)]
 
 

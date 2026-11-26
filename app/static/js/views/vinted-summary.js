@@ -5,7 +5,7 @@
 // against the DAC7 thresholds. Deeper analysis stays on the CSV.
 
 import { api } from '../api.js';
-import { h, formatEuro, formatSignedEuro, monthLabel, currentMonth, loadingBlock, errorBlock } from '../ui.js';
+import { h, formatEuro, euroParts, formatSignedEuro, monthLabel, currentMonth, loadingBlock, errorBlock } from '../ui.js';
 import { monthSwitcher, monthFromQuery } from './movements.js';
 import { trendChart, exploreLink } from './summary.js';
 import { explorePath } from './explore.js';
@@ -105,7 +105,7 @@ export async function mount(root, ctx) {
     const parts = [
       h('div', { class: 'receipt receipt-total' },
         h('span', { class: 'receipt-label' }, `Vendite di ${monthLabel(month)}`),
-        h('span', { class: 'receipt-figure' }, formatEuro(summary.sales_cents)),
+        h('span', { class: 'receipt-figure' }, ...euroParts(summary.sales_cents)),
         h('span', { class: 'receipt-sub' },
           summary.sales_count ? plural(summary.sales_count, 'vendita', 'vendite') : 'Nessuna vendita')),
     ];
