@@ -17,7 +17,7 @@
 import { api } from '../api.js';
 import {
   h, icon, toast, vibrate, confirmDialog, promptDialog, choiceDialog, openDialog, formatEuro, euroParts, PAYMENT_LABELS,
-  todayIso, loadingBlock, errorBlock,
+  todayIso, loadingBlock, errorBlock, centsToInput,
 } from '../ui.js';
 import { thumbButton, choosePhotoFor } from '../photo.js';
 import { itemPath, dayMonth, sinceLabel, daysBetween, gainSpan, captionOf, waitingSince } from './vinted.js';
@@ -25,6 +25,7 @@ import {
   shareWithClaude, copyRequest, prepareRequest, forgetRequest, readAnswer, keepAnswer, copyText, detailsSummary,
   detailsProgress, detailChips, detailsExtra, detailsRows, loadListingOptions, priceInput,
 } from '../vinted-listing.js';
+import { markdownSection, planDialog } from '../vinted-markdown.js';
 
 function statusText(item) {
   if (item.status === 'sold') return `Venduto il ${dayMonth(item.sale.income_date)}`;
@@ -641,6 +642,28 @@ export async function mount(root, ctx) {
         h('button', { class: 'btn-text btn-text-danger', type: 'button', onclick: cancelSale }, 'Annulla vendita')));
   }
 
+  // --- markdown (0.19.0) ---------------------------------------------------------------------
+  const markdownActions = {
+    changePlan: async () => {
+      const payload = await planDialog(item);
+      if (payload) run(() => api.patch(`/vinted/items/${itemId}`, { markdown: payload }), 'Ribasso non salvato', 'Ribasso aggiornato.');
+    },
+    lower: (cents) => run(() => api.patch(`/vinted/items/${itemId}`, { price: centsToInput(cents) }),
+      'Prezzo non salvato', `Nuovo prezzo: ${formatEuro(cents)}.`),
+    skip: () => run(() => api.post(`/vinted/items/${itemId}/markdown/skip`), 'Non rimandato', 'Ribasso rimandato di un giro.'),
+    otherPrice: () => changePrice(),
+    review: () => {
+      asking = true;
+      draw();
+      const steps = content.querySelector('.listing-card');
+      if (steps) steps.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    },
+    withdraw: () => run(() => api.patch(`/vinted/items/${itemId}`, { is_withdrawn: true }), 'Non modificato'),
+    settle: () => run(() => api.post(`/vinted/items/${itemId}/markdown/settle`), 'Non salvato',
+      'Resta al minimo, senza altri promemoria.'),
+    setMinimum: () => ctx.navigate(listingPath),
+  };
+
   // --- note, withdraw, delete ---------------------------------------------------------------
   async function editNote() {
     const note = await promptDialog({ title: 'Nota', label: 'Nota', value: item.note || '', minLength: 0 });
@@ -682,6 +705,7 @@ export async function mount(root, ctx) {
         h('h2', { class: 'section-title' }, 'Su Vinted'),
         h('span', { class: `status${item.status === 'listed' ? '' : ` is-${item.status}`}` }, statusText(item))),
       vintedCard(),
+      ...markdownSection(item, markdownActions),
       listing ? h('h2', { class: 'section-title' }, 'Annuncio') : null, listing,
       h('h2', { class: 'section-title' }, 'Acquisto'), purchaseCard(),
       h('h2', { class: 'section-title' }, 'Vendita'), saleCard(),

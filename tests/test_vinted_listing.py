@@ -17,6 +17,7 @@ DESCRIZIONE:
 …
 PREZZO: (solo il numero, in euro)
 MINIMO: (prezzo sotto cui non scendere)
+RIBASSO: (quanto e ogni quanti giorni, per esempio «10% ogni 14 giorni» o «2 € ogni 7 giorni»; oppure «niente»)
 VERIFICA: (cose da controllare prima di pubblicare, oppure «niente»)"""
 
 
@@ -206,6 +207,8 @@ def test_request_for_an_item_already_on_sale(client):
     item = make_item(client, title="Borsa", listed_on="2027-06-18", price="25", listing_title="Borsa pelle")
     text = request_text(client, item["id"])["text"]
     assert "In vendita: da 12 giorni a 25,00 €, non ancora venduto\nTitolo attuale: Borsa pelle\n" in text
+    # 0.19.0: without a minimum, no "Minimo attuale"; the plan is the base.
+    assert "Ribasso attuale: −10% ogni 14 giorni (piano base)\n" in text and "Minimo attuale" not in text
     assert "L'articolo è già in vendita: proponi un PREZZO aggiornato e spiega in VERIFICA perché." in text
     assert text.endswith(ANSWER_FORMAT)
     assert client.get(f"{API}/vinted/items/999/listing-request").status_code == 404
@@ -238,6 +241,8 @@ VERIFICA: niente""")
         "price_cents": 2500,
         "min_price_cents": 1800,
         "check": None,
+        "markdown": None,  # 0.19.0: no line RIBASSO, the item keeps its plan
+        "markdown_text": None,
     }
     # Nothing saved by reading.
     assert client.get(f"{API}/vinted/items").json() == []
@@ -274,7 +279,8 @@ def test_parse_odd_prices_and_answers_out_of_format():
     assert loose == {
         "recognized": False, "title": None,
         "description": "Ti suggerisco di chiamarla Felpa grigia e di chiedere 20 euro.",
-        "price_cents": None, "min_price_cents": None, "check": None}
+        "price_cents": None, "min_price_cents": None, "check": None,
+        "markdown": None, "markdown_text": None}
     assert parse_answer("   ")["description"] is None
 
 

@@ -19,6 +19,7 @@ import {
 } from '../ui.js';
 import { thumbButton, thumbPlaceholder } from '../photo.js';
 
+const MARKDOWN_QUERY = 'ribassare';
 const FILTERS = [
   { id: 'unlisted', query: null, label: 'Da pubblicare', icon: 'hourglass' },
   { id: 'listed', query: 'in-vendita', label: 'In vendita', icon: 'store' },
@@ -109,8 +110,19 @@ export function itemLines(item) {
   }
   return [
     h('span', { class: 'art-price' }, item.purchase ? `Pagato ${formatEuro(item.purchase.amount_cents)}` : 'Già nostro'),
-    h('span', { class: 'art-meta' }, waitingText(item)),
+    h('span', { class: 'art-meta' }, waitingText(item), markdownTag(item)),
   ];
+}
+
+// 0.19.0 (F7): the items that ask for a step down or, at the minimum for a
+// whole round, for a decision (item.markdown from the server).
+export function needsMarkdown(item) {
+  return item.status === 'listed' && (item.markdown.state === 'due' || item.markdown.state === 'review');
+}
+
+function markdownTag(item) {
+  if (!needsMarkdown(item)) return null;
+  return h('span', {}, ' · ', h('span', { class: 'art-due' }, item.markdown.state === 'due' ? 'da ribassare' : 'al minimo'));
 }
 
 // Status of an item not sold: where it is and since when.
@@ -200,7 +212,9 @@ function soldGroups(items) {
 }
 
 export async function mount(root, ctx) {
-  let filter = (FILTERS.find((item) => item.query === ctx.query.get('filtro')) || FILTERS[0]).id;
+  // 0.19.0: "ribassare" is the list of the reminder, without a pill of its own.
+  let filter = ctx.query.get('filtro') === MARKDOWN_QUERY ? 'markdown'
+    : (FILTERS.find((item) => item.query === ctx.query.get('filtro')) || FILTERS[0]).id;
   // 0.14.0: opening the tab, the list starts from the first filter with
   // items ("Da pubblicare", else "In vendita", else all of them). A filter
   // chosen with a tap, or in the address, stays.
@@ -253,10 +267,23 @@ export async function mount(root, ctx) {
       searchInput.focus();
     },
   }, icon('search'));
+  // 0.19.0: like the reminder of the recurring items, above the filters.
+  const markdownBanner = h('a', {
+    class: 'due-banner md-banner', href: `/vinted?filtro=${MARKDOWN_QUERY}`, hidden: true,
+    onclick: (event) => {
+      event.preventDefault();
+      chosen = true;
+      filter = 'markdown';
+      history.replaceState(history.state, '', `/vinted?filtro=${MARKDOWN_QUERY}`);
+      draw();
+      window.scrollTo(0, 0);
+    },
+  });
   const body = h('div');
   root.append(
     ...vintedHead('items', ctx.navigate, lens),
     searchBar,
+    markdownBanner,
     pills,
     body,
     h('div', { class: 'footer-bar' },
@@ -304,6 +331,12 @@ export async function mount(root, ctx) {
       }, icon(item.icon), number === null ? null : h('span', { class: 'pill-count' }, String(number)));
     }));
 
+    const asking = items.filter(needsMarkdown).length;
+    markdownBanner.hidden = asking === 0 || filter === 'markdown' || Boolean(search);
+    markdownBanner.replaceChildren(
+      h('span', {}, asking === 1 ? '1 articolo da ribassare' : `${asking} articoli da ribassare`),
+      h('span', { class: 'due-banner-go', 'aria-hidden': 'true' }, 'Vedi ›'));
+
     if (!items.length) {
       body.replaceChildren(emptyAll());
       return;
@@ -319,6 +352,17 @@ export async function mount(root, ctx) {
         : h('div', { class: 'empty' },
           h('p', { class: 'empty-title' }, 'Nessun articolo trovato'),
           h('p', { class: 'empty-text' }, 'La ricerca guarda il titolo di tutti gli articoli.')));
+      return;
+    }
+    if (filter === 'markdown') {
+      const due = items.filter(needsMarkdown);
+      body.replaceChildren(due.length
+        ? h('div', {},
+          listHead('Da ribassare', countLabel(due.length), 'Cambia il prezzo su Vinted, poi confermalo nella scheda.'),
+          h('div', { class: 'card rows' }, due.map(itemRow)))
+        : h('div', { class: 'empty' },
+          h('p', { class: 'empty-title' }, 'Niente da ribassare'),
+          h('p', { class: 'empty-text' }, 'Quando un articolo resta allo stesso prezzo per un giro del suo ribasso, compare qui.')));
       return;
     }
     const visible = filter === 'all' ? items : items.filter((item) => item.status === filter);

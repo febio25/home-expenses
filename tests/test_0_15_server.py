@@ -107,7 +107,7 @@ def test_backup_of_014_gets_the_icons(client, categories, tmp_path):
     assert icons["Animali"] == DEFAULT_ICON
     live = sqlite3.connect(get_settings().db_path)
     try:
-        assert live.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert live.execute("PRAGMA user_version").fetchone()[0] == 11
         assert live.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
         live.close()

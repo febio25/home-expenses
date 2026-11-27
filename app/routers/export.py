@@ -51,6 +51,8 @@ INCOME_CSV_COLUMNS = [
     "creato_il",
 ]
 # One row per item: what it cost, what it made, how long it waited.
+MARKDOWN_SOURCE_LABELS = {"base": "base", "claude": "Claude", "manual": "a mano"}
+
 VINTED_CSV_COLUMNS = [
     "articolo",
     "stato",
@@ -72,6 +74,8 @@ VINTED_CSV_COLUMNS = [
     "prezzo_attuale",
     "prezzo_minimo",
     "cambi_prezzo",
+    "ribasso",
+    "ribasso_scelto_da",
 ]
 VINTED_STATUS_LABELS = {
     "unlisted": "Da pubblicare",
@@ -174,7 +178,9 @@ def build_vinted_csv(items: list[dict], flavour: str, today: date) -> str:
     item and for one never published. data_pubblicazione: that day.
     prezzo_partenza: the asking price on the day it was published;
     prezzo_attuale and prezzo_minimo: as now; cambi_prezzo: how many times
-    the price changed after that (empty if never published).
+    the price changed after that (empty if never published). ribasso: the
+    markdown plan ("−10% ogni 14 giorni", "Niente ribasso"); ribasso_scelto_da:
+    base (the app's base plan), Claude or a mano (0.19.0).
     """
     excel = flavour == "excel_it"
 
@@ -210,6 +216,9 @@ def build_vinted_csv(items: list[dict], flavour: str, today: date) -> str:
             money(listing["price_cents"]),
             money(listing["min_price_cents"]),
             str(max(0, len(listing["price_changes"]) - 1)) if item["listed_on"] is not None else "",
+            # 0.19.0: the markdown plan, and who chose it.
+            item["markdown"]["plan"]["text"],
+            MARKDOWN_SOURCE_LABELS[item["markdown"]["plan"]["source"]],
         ])
     return _render(VINTED_CSV_COLUMNS, records, excel)
 

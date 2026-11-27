@@ -11,6 +11,7 @@ import { api } from '../api.js';
 import { h, toast, vibrate, centsToInput, loadingBlock, errorBlock } from '../ui.js';
 import { itemPath } from './vinted.js';
 import { readAnswer, takeAnswer, priceInput } from '../vinted-listing.js';
+import { planPayload } from '../vinted-markdown.js';
 
 export async function mount(root, ctx) {
   const itemId = Number(ctx.params[0]);
@@ -48,6 +49,10 @@ export async function mount(root, ctx) {
   const priceField = priceInput('listing-price', listing.price_cents);
   const minField = priceInput('listing-min', listing.min_price_cents, 'Es. 18');
   const priceError = h('p', { class: 'field-error', hidden: true });
+  // 0.19.0: the plan of the line RIBASSO, saved with the ad; without the
+  // line the item keeps its plan.
+  let markdown = null;
+  const markdownHint = h('p', { class: 'form-hint md-hint', hidden: true });
 
   // Fill the form with what was recognised in Claude's answer.
   function apply(answer) {
@@ -55,8 +60,14 @@ export async function mount(root, ctx) {
     if (answer.description) descriptionInput.value = answer.description;
     if (answer.price_cents) priceField.value = centsToInput(answer.price_cents);
     if (answer.min_price_cents) minField.value = centsToInput(answer.min_price_cents);
+    markdown = answer.markdown ? planPayload(answer.markdown, 'claude') : null;
+    markdownHint.hidden = !answer.markdown;
+    if (answer.markdown) markdownHint.textContent = `Ribasso: ${answer.markdown.text} (proposto da Claude).`;
     const parts = [];
     if (!answer.recognized) parts.push('Risposta non nel formato atteso: tutto il testo è nella descrizione, controlla i campi.');
+    if (answer.markdown_text && !answer.markdown) {
+      parts.push(`Ribasso non letto («${answer.markdown_text}»): resta quello di prima, si cambia dalla scheda.`);
+    }
     if (answer.check) parts.push(`Da controllare prima di pubblicare: ${answer.check}`);
     checkBanner.replaceChildren(...parts.map((text) => h('p', {}, text)));
     checkBanner.hidden = parts.length === 0;
@@ -87,6 +98,7 @@ export async function mount(root, ctx) {
       price: priceField.value.trim() || null,
       min_price: minField.value.trim() || null,
     };
+    if (markdown) payload.markdown = markdown;
     try {
       await api.patch(`/vinted/items/${itemId}`, payload);
       vibrate();
@@ -127,6 +139,7 @@ export async function mount(root, ctx) {
         h('div', {}, h('label', { class: 'label', for: 'listing-price' }, 'Prezzo'), priceField),
         h('div', {}, h('label', { class: 'label', for: 'listing-min' }, 'Minimo'), minField)),
       priceError,
+      markdownHint,
       item.status === 'listed'
         ? h('p', { class: 'form-hint' }, 'È già su Vinted: un prezzo nuovo entra nello storico dei prezzi.')
         : null),

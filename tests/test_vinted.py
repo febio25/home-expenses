@@ -20,7 +20,7 @@ VINTED_CSV_HEADER = [
     "articolo", "stato", "data_acquisto", "prezzo_acquisto", "data_vendita", "prezzo_vendita",
     "guadagno", "giorni_in_vendita", "nota", "inserito_da", "creato_il", "data_pubblicazione",
     "tipo", "marca", "taglia", "condizioni", "prezzo_partenza", "prezzo_attuale", "prezzo_minimo",
-    "cambi_prezzo",
+    "cambi_prezzo", "ribasso", "ribasso_scelto_da",  # 0.19.0
 ]
 # The server only checks the JPEG signature: no image library needed here.
 JPEG = b"\xff\xd8\xff\xe0" + bytes(range(256)) * 4

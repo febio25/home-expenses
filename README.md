@@ -167,6 +167,24 @@ esposta su internet.
   articoli. Dalla 0.18.1 la barra di ricerca compare solo quando serve: la
   **lente** in alto, accanto al nome, la apre sotto «Articoli | Riepilogo»;
   la lente di nuovo, o la ×, la svuota e la chiude.
+- **Ribasso a scalini** (dalla 0.19.0): se un articolo in vendita resta
+  invenduto, l'app propone di abbassarne il prezzo un gradino alla volta,
+  fino al minimo e mai sotto, arrotondato al mezzo euro per difetto. Non lo
+  cambia mai da sola: il prezzo si cambia prima su Vinted, poi si conferma
+  nell'app. Il **piano base** è −10% ogni 14 giorni, contati dalla
+  pubblicazione e poi dall'ultimo cambio di prezzo; ogni articolo può avere
+  un piano suo, proposto da Claude nella risposta (riga `RIBASSO`) o scritto
+  a mano (una % o un importo, ogni quanti giorni), oppure «Niente ribasso».
+  Nella scheda, sotto *Su Vinted*, la sezione **Ribasso** mostra il piano
+  con «Cambia» e il prossimo gradino; quando tocca, un riquadro giallo
+  propone «Ribassa a X €», «Salta N giorni» (rimanda di un giro) o «Altro
+  prezzo». In cima alla lista Vinted la riga gialla «N articoli da
+  ribassare · Vedi ›» apre solo quelli. Al minimo l'articolo resta un giro
+  intero a quel prezzo; se è ancora invenduto chiede di decidere:
+  «Rivaluta con Claude» (la richiesta riporta i prezzi già fatti e il
+  piano), «Ritira dalla vendita» o «Lascia così» (nessun altro promemoria
+  finché il prezzo non cambia). Senza minimo il ribasso non parte: la
+  scheda chiede di impostarlo.
 - Scheda dell'articolo (dalla 0.16.0): accanto alla foto, alti quanto lei,
   il titolo (fino a quattro righe, poi «…»; toccandolo si rinomina) e i
   prezzi (prezzo su Vinted e pagato; da venduto, prezzo di vendita e
@@ -524,6 +542,14 @@ era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
 
+Dalla 0.18.1 alla 0.19.0, al primo avvio, il database passa dallo schema 10
+all'11 (prima l'app ne salva una copia, *Prima di un aggiornamento*): gli
+articoli Vinted ricevono i campi del ribasso, vuoti per tutti, cioè con il
+piano base. Gli articoli in vendita da più di 14 giorni allo stesso prezzo
+e sopra il minimo compaiono subito tra quelli da ribassare. La 0.18.1
+funziona anche sul database della 0.19.0 (verificato: i campi vengono
+ignorati); un backup della 0.19.0 però non si ripristina sulla 0.18.1.
+
 Dalla 0.18.0 alla 0.18.1 il database non cambia (schema 10, invariato):
 cambiano solo l'aspetto di calendario, scontrini, Riepilogo e Vinted.
 Tornare alla 0.18.0 resta possibile, anche con un backup fatto dalla 0.18.1.
@@ -803,7 +829,9 @@ mai pubblicati), `nota`, `inserito_da`, `creato_il` (UTC, ISO 8601). Dalla
 Altro), `marca`, `taglia`, `condizioni`, `prezzo_partenza` (il prezzo
 dell'annuncio il giorno della pubblicazione), `prezzo_attuale`,
 `prezzo_minimo`, `cambi_prezzo` (quante volte il prezzo è cambiato dopo la
-pubblicazione). Le colonne precedenti non cambiano posizione.
+pubblicazione). Dalla 0.19.0, in coda: `ribasso` (il piano, «−10% ogni 14
+giorni», «Niente ribasso») e `ribasso_scelto_da` (base, Claude, a mano). Le
+colonne precedenti non cambiano posizione.
 
 Gli importi degli articoli sono anche nei CSV di spese ed entrate, con
 categoria *Vinted*: il file degli articoli aggiunge il legame tra acquisto e
@@ -838,14 +866,20 @@ dell'articolo (0.11.0):
 
    «Copia solo la richiesta» copia il testo senza condividere nulla.
 3. Claude risponde nel formato fisso (TITOLO, DESCRIZIONE, PREZZO, MINIMO,
-   VERIFICA): copia la risposta con il pulsante copia sotto il messaggio.
+   RIBASSO dalla 0.19.0, VERIFICA): copia la risposta con il pulsante copia
+   sotto il messaggio.
 4. **Incolla la risposta** (passo 3): si apre la schermata *Annuncio* con
    titolo, descrizione, prezzo e minimo già compilati, più un avviso giallo
    con le cose da controllare (non viene salvato). Correggi e **Salva
    annuncio**. Se la risposta non è nel formato, tutto il testo finisce nella
    descrizione e i prezzi restano vuoti. Se negli appunti c'è ancora la
    richiesta, l'app lo dice e apre la casella in cui incollare. «Oppure
-   scrivi l'annuncio tu» apre la stessa schermata vuota.
+   scrivi l'annuncio tu» apre la stessa schermata vuota. Dalla 0.19.0, se
+   la risposta ha la riga RIBASSO («10% ogni 14 giorni», «2 € ogni 7
+   giorni», «niente»), sotto i prezzi compare «Ribasso: … (proposto da
+   Claude)» e il piano si salva con l'annuncio; senza la riga, o con una
+   riga che l'app non sa leggere (lo dice l'avviso giallo), l'articolo
+   tiene il piano che aveva.
 5. **Annuncio pronto:** il riquadro mostra titolo, descrizione e prezzo, ognuno
    con «Copia», e il promemoria per Vinted. Pubblichi a mano su Vinted, poi
    **Segna come pubblicato**: il prezzo di quel giorno diventa il prezzo di
@@ -857,7 +891,8 @@ dell'articolo (0.11.0):
 6. **In vendita:** in cima il prezzo su Vinted con «Cambia» (lo storico dei
    prezzi finisce nel CSV: `prezzo_partenza`, `cambi_prezzo`), poi titolo e
    descrizione con «Copia» e «Non si vende? Chiedi a Claude un prezzo
-   nuovo»: la richiesta dice da quanti giorni e a che prezzo è in vendita.
+   nuovo»: la richiesta dice da quanti giorni e a che prezzo è in vendita,
+   e dalla 0.19.0 anche i prezzi già fatti, il minimo e il ribasso attuale.
    Anche qui c'è la riga *Dettagli dell'articolo*. Venduto o ritirato: resta
    solo il testo, se c'è, con i dettagli da rivedere (senza modifica).
 
@@ -894,7 +929,10 @@ si può cambiare senza una nuova versione dell'app. Per aggiungerla:
    comunque.
 
 Il formato della risposta deve restare **identico** nella richiesta e nella
-skill, altrimenti «Incolla risposta» non riconosce le parti. Il Progetto
+skill, altrimenti «Incolla risposta» non riconosce le parti. Con la 0.19.0
+la skill aggiunge la riga RIBASSO subito dopo MINIMO: va ricaricata (stessi
+passi). La 0.18 ignora quella riga senza errori, perché legge solo il primo
+numero di MINIMO; per questo RIBASSO non va mai dopo VERIFICA. Il Progetto
 claude.ai «Annunci Vinted» suggerito dalla 0.10.0 non serve più: una chat
 aperta con «Condividi» non entra in un Progetto.
 
@@ -1038,6 +1076,24 @@ CDN.
 - Dalla 0.18.1: `GET /api/v1/vinted/summary` ha anche `purchase_cents` e
   `extra_cents`, gli importi delle spese Vinted del mese divisi tra acquisti
   di articoli e costi extra (accanto a `purchase_count` ed `extra_count`).
+- Dalla 0.19.0 (ribasso):
+  - ogni articolo Vinted ha `markdown`: `plan` (`kind` `pct`, `eur` o `none`,
+    `amount` in percento o in centesimi, `days`, `source` `base`, `claude` o
+    `manual`, `text` come lo scrive l'app), `state` (`inactive`, `off`,
+    `no_minimum`, `waiting`, `due`, `at_minimum`, `review`, `settled`),
+    `since` (ultimo cambio di prezzo), `due_on`, `next_price_cents`, `steps`
+    (i gradini che restano, il minimo per ultimo).
+  - `PATCH /api/v1/vinted/items/{id}` accetta `markdown`: `{"plan": "base"}`,
+    `{"plan": "none"}` oppure `{"plan": "pct" | "eur", "amount": "10" |
+    "2,50", "days": 14, "source": "claude" | "manual"}` (da 1% a 50%, da
+    0,50 €, ogni 1–90 giorni; altrimenti 422).
+  - `POST /api/v1/vinted/items/{id}/markdown/skip` («Salta»: il gradino si
+    rimanda di un giro da oggi; 409 se non c'è niente da saltare) e
+    `POST /api/v1/vinted/items/{id}/markdown/settle` («Lascia così» al
+    minimo; 409 se l'articolo non è al minimo).
+  - `POST /api/v1/vinted/listing/parse` restituisce anche `markdown` (il piano
+    della riga RIBASSO, se leggibile) e `markdown_text` (la riga com'è
+    scritta).
 
 ## Sviluppo
 
@@ -1083,6 +1139,7 @@ app/
   text.py          ricerca: testo senza maiuscole e accenti
   tags.py          etichette #parola nelle note delle spese (0.18.0)
   vinted_listing.py  annunci Vinted: richiesta per Claude e lettura della risposta
+  vinted_markdown.py ribasso a scalini: piani, gradini e stato di un articolo (0.19.0)
   merchant_duplicates.py  possibili doppioni tra gli esercenti
   dates.py         intervalli di date
   schemas.py       modelli JSON dell'API

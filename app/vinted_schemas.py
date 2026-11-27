@@ -126,6 +126,40 @@ class VintedItemCreate(VintedListingIn):
     )
 
 
+# --- markdowns (0.19.0) -------------------------------------------------------------
+
+VintedMarkdownKind = Literal["pct", "eur", "none"]
+VintedMarkdownState = Literal["inactive", "off", "no_minimum", "waiting", "due", "at_minimum", "review", "settled"]
+
+
+class VintedMarkdownIn(BaseModel):
+    """The markdown plan of an item. plan "base": the app's base plan (10%
+    every 14 days); "pct" or "eur" with amount ("10" percent, "2,50" euro)
+    and days; "none": never marked down."""
+
+    plan: Literal["base", "pct", "eur", "none"]
+    amount: str | None = Field(default=None, max_length=20, description='"10" (percent) or "2,50" (euro)')
+    days: int | None = Field(default=None, ge=1, le=90)
+    source: Literal["claude", "manual"] = Field("manual", description="Who chose it: Claude's answer or by hand")
+
+
+class VintedMarkdownPlanOut(BaseModel):
+    kind: VintedMarkdownKind
+    amount: int | None = Field(description="Percent for pct, cents for eur, null for none")
+    days: int | None
+    source: Literal["base", "claude", "manual"]
+    text: str = Field(description='As the app writes it: "−10% ogni 14 giorni"')
+
+
+class VintedMarkdownOut(BaseModel):
+    plan: VintedMarkdownPlanOut
+    state: VintedMarkdownState
+    since: date | None = Field(description="Day of the last change of price (or of publication)")
+    due_on: date | None = Field(description="Day the next step is due (at the minimum: the end of the round)")
+    next_price_cents: int | None = Field(description="Price of the next step, above the minimum only")
+    steps: list[int] = Field(description="Prices of the steps to come, the minimum last")
+
+
 class VintedItemUpdate(VintedListingIn):
     """Partial update. ``"note": null`` clears the note; ``"listed_on": null``
     puts the item back among the ones not on Vinted yet."""
@@ -138,6 +172,7 @@ class VintedItemUpdate(VintedListingIn):
         " purchase, not after the sale",
     )
     is_withdrawn: bool | None = Field(default=None, description="Kept or given away: no longer for sale")
+    markdown: VintedMarkdownIn | None = Field(default=None, description="0.19.0: the markdown plan")
 
 
 class VintedSaleIn(BaseModel):
@@ -229,6 +264,10 @@ class VintedListingParseOut(BaseModel):
     price_cents: int | None
     min_price_cents: int | None
     check: str | None = Field(description="VERIFICA: what to check before publishing, shown once")
+    markdown: VintedMarkdownPlanOut | None = Field(
+        None, description="0.19.0: the line RIBASSO, when present and readable (source claude)"
+    )
+    markdown_text: str | None = Field(None, description="The line RIBASSO as written, read or not")
 
 
 class VintedOptionOut(BaseModel):
@@ -265,6 +304,7 @@ class VintedItemOut(BaseModel):
     )
     details: VintedDetailsOut
     listing: VintedListingOut
+    markdown: VintedMarkdownOut
     created_by_name: str
     created_at: str
     updated_at: str

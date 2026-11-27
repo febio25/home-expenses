@@ -26,7 +26,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from .. import dates, vinted_listing
+from .. import dates, vinted_listing, vinted_markdown
 from ..dates import check_expense_date
 from ..db import get_db, utc_now
 from ..schemas import ExpenseCreate, ExpenseOut, IncomeCreate, IncomeOut
@@ -44,6 +44,7 @@ from ..vinted_schemas import (
     VintedListingParseIn,
     VintedListingParseOut,
     VintedListingRequestOut,
+    VintedMarkdownIn,
     VintedPurchaseIn,
     VintedSaleIn,
 )
@@ -66,6 +67,8 @@ SELECT v.id, v.title, v.note, v.listed_on, v.is_withdrawn, v.created_at, v.updat
        v.kind, v.brand, v.size, v.condition, v.color_material, v.measurements,
        v.book_author, v.book_publisher_year, v.defects, v.similar_prices,
        v.listing_title, v.listing_description, v.price_cents, v.min_price_cents,
+       v.markdown_kind, v.markdown_amount, v.markdown_days, v.markdown_source,
+       v.markdown_skipped_on, v.markdown_settled_on,
        author.display_name AS created_by_name,
        p.token AS photo,
        e.id AS e_id, e.amount_cents AS e_amount, e.expense_date AS e_date,
@@ -128,7 +131,7 @@ def item_out(row: sqlite3.Row, price_changes: list[dict] | None = None) -> dict:
         status = "listed" if row["listed_on"] is not None else "unlisted"
     # Things already at home cost nothing: their gain is the whole price.
     gain = sale["amount_cents"] - (purchase["amount_cents"] if purchase else 0) if sale else None
-    return {
+    item = {
         "id": row["id"],
         "title": row["title"],
         "note": row["note"],
@@ -159,6 +162,8 @@ def item_out(row: sqlite3.Row, price_changes: list[dict] | None = None) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+    item["markdown"] = vinted_markdown.state_of(item, row, dates.today())  # 0.19.0
+    return item
 
 
 def price_changes_of(db: sqlite3.Connection, item_id: int | None = None) -> dict[int, list[dict]]:
@@ -260,6 +265,24 @@ def listing_changes(body: VintedListingIn, sent: set[str]) -> dict[str, object]:
     if "min_price" in sent:
         changes["min_price_cents"] = _optional_amount(body.min_price)
     return changes
+
+
+def markdown_changes(body: VintedMarkdownIn) -> dict[str, object]:
+    """The columns for a markdown plan sent in a PATCH (0.19.0)."""
+    if body.plan == "base":
+        return vinted_markdown.plan_columns(None, body.source)
+    if body.plan == "none":
+        return vinted_markdown.plan_columns({"kind": "none"}, body.source)
+    if body.days is None or not body.amount:
+        raise HTTPException(status_code=422, detail="Indica di quanto ribassare e ogni quanti giorni.")
+    unit = "%" if body.plan == "pct" else "€"
+    plan = vinted_markdown.parse_plan(f"{body.amount.strip()} {unit} ogni {body.days} giorni")
+    if plan is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Ribasso non valido: da 1% a 50%, oppure da 0,50 € in su, ogni 1–90 giorni.",
+        )
+    return vinted_markdown.plan_columns(plan, body.source)
 
 
 def check_prices(price: int | None, minimum: int | None) -> None:
@@ -546,6 +569,8 @@ def update_item(
             )
         changes["is_withdrawn"] = int(body.is_withdrawn)
     changes.update(listing_changes(body, sent))
+    if "markdown" in sent and body.markdown is not None:
+        changes.update(markdown_changes(body.markdown))
     check_prices(
         changes.get("price_cents", item["price_cents"]),
         changes.get("min_price_cents", item["min_price_cents"]),
@@ -565,6 +590,44 @@ def update_item(
             on_sale,
         )
         db.commit()
+    return fetch_item(db, item_id)
+
+
+@router.post("/items/{item_id}/markdown/skip", response_model=VintedItemOut)
+def skip_markdown(
+    item_id: int,
+    user: sqlite3.Row = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """«Salta» (0.19.0): the step due is put off by a round, counted from
+    today; the price does not change."""
+    item = fetch_item(db, item_id)
+    if item["markdown"]["state"] not in ("due", "review"):
+        raise HTTPException(status_code=409, detail="Non c'è un ribasso da saltare per questo articolo.")
+    db.execute(
+        "UPDATE vinted_items SET markdown_skipped_on = ?, updated_at = ? WHERE id = ?",
+        (dates.today().isoformat(), utc_now(), item_id),
+    )
+    db.commit()
+    return fetch_item(db, item_id)
+
+
+@router.post("/items/{item_id}/markdown/settle", response_model=VintedItemOut)
+def settle_markdown(
+    item_id: int,
+    user: sqlite3.Row = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """«Lascia così» (0.19.0): at the minimum, it stays on sale at that
+    price and asks nothing more, until the price changes again."""
+    item = fetch_item(db, item_id)
+    if item["markdown"]["state"] not in ("at_minimum", "review"):
+        raise HTTPException(status_code=409, detail="L'articolo non è al minimo.")
+    db.execute(
+        "UPDATE vinted_items SET markdown_settled_on = ?, updated_at = ? WHERE id = ?",
+        (dates.today().isoformat(), utc_now(), item_id),
+    )
+    db.commit()
     return fetch_item(db, item_id)
 
 

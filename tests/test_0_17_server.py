@@ -121,7 +121,7 @@ def test_backup_of_016_gets_the_column(client, categories, tmp_path):
     assert [t["is_variable"] for t in client.get(f"{API}/recurring-incomes").json()] == [False]
     live = sqlite3.connect(get_settings().db_path)
     try:
-        assert live.execute("PRAGMA user_version").fetchone()[0] == latest_schema_version() == 10
+        assert live.execute("PRAGMA user_version").fetchone()[0] == latest_schema_version() == 11
         assert live.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
         live.close()

@@ -61,9 +61,23 @@ def categories(client):
     return {c["name"]: c["id"] for c in client.get("/api/v1/categories").json()}
 
 
+MARKDOWN_COLUMNS = ("markdown_kind", "markdown_amount", "markdown_days", "markdown_source",
+                    "markdown_skipped_on", "markdown_settled_on")
+
+
+def strip_vinted_markdown(conn):
+    """Undo migration 011 on a copy of a backup, to simulate one made
+    before 0.19.0."""
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(vinted_items)")]
+    for column in MARKDOWN_COLUMNS:
+        if column in columns:
+            conn.execute(f"ALTER TABLE vinted_items DROP COLUMN {column}")
+
+
 def strip_recurring_variable(conn):
     """Undo migration 010 on a copy of a backup, to simulate one made
-    before 0.17.0."""
+    before 0.17.0 (and what came after it: 0.19.0, the markdowns)."""
+    strip_vinted_markdown(conn)
     for table in ("recurring_expenses", "recurring_incomes"):
         # a test simulating an even older backup may have dropped the table already
         columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]

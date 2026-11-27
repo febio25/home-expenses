@@ -9,6 +9,10 @@ so the request is enough on its own. The same rules, in more detail, are in
 the skill «annunci-vinted» that the README asks to add to the Claude
 account. The answer format must stay the same in both: if one changes,
 change the other, or the answer is no longer recognised.
+
+0.19.0 (F7): the answer has one more line, RIBASSO, right after MINIMO
+(the 0.18 reader then still takes the first number of MINIMO), and the
+request of an item on sale says its prices so far and its plan.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from . import vinted_markdown
 from .money import AmountError, format_cents, parse_amount
 from .vinted_schemas import (
     VINTED_ANY_KIND_FIELDS,
@@ -39,8 +44,12 @@ STYLE = """Come scrivere
 - Descrizione: in prosa, da 1 a 4 frasi, tono cordiale e sincero. Prima cos'è e com'è fatto (materiale, colore, dettagli, misure dentro la frase), poi le condizioni, con i difetti detti chiaramente e il rimando alle foto. Niente elenchi puntati, hashtag, emoji, parole tutte in maiuscolo o frasi pubblicitarie («affare», «spedizione veloce»).
 - Non inventare dettagli che non sono nei dati o nella foto (marca, materiale, misure, difetti, autenticità): se manca qualcosa d'importante, scrivilo in VERIFICA.
 - Prezzo: realistico per Vinted, tenendo conto di stato, marca e prezzi simili se ci sono; in euro interi, un po' sopra il prezzo a cui mi aspetto di vendere, per lasciare spazio alle offerte. Senza prezzi simili, una stima prudente, e in VERIFICA il consiglio di confrontarla con annunci simili.
-- Minimo: il prezzo sotto cui non conviene scendere; di norma non sotto quanto l'ho pagato."""
+- Minimo: il prezzo sotto cui non conviene scendere; di norma non sotto quanto l'ho pagato.
+- Ribasso: se resta invenduto, il prezzo scende a scalini fino al minimo, arrotondato al mezzo euro. Il piano base è 10% ogni 14 giorni: scrivilo se va bene, oppure proponine uno adatto all'articolo (per esempio un importo fisso per gli articoli economici, «niente» per un pezzo raro che non va ribassato)."""
 ON_SALE = "L'articolo è già in vendita: proponi un PREZZO aggiornato e spiega in VERIFICA perché."
+# 0.19.0: at the minimum for a whole round and still unsold.
+AT_MINIMUM = ("È al minimo e ancora invenduto: dimmi se conviene un MINIMO più basso con un nuovo RIBASSO, "
+              "un prezzo diverso o ritirarlo, e spiega in VERIFICA perché.")
 # One of Nastia's own ads on Vinted, barely shortened: Claude copies the tone.
 EXAMPLE = """Esempio dello stile (solo per il tono, non per i contenuti):
 TITOLO: Giubbotto piumino Benetton taglia 44 (M) trapuntato collo alto
@@ -53,6 +62,7 @@ DESCRIZIONE:
 …
 PREZZO: (solo il numero, in euro)
 MINIMO: (prezzo sotto cui non scendere)
+RIBASSO: (quanto e ogni quanti giorni, per esempio «10% ogni 14 giorni» o «2 € ogni 7 giorni»; oppure «niente»)
 VERIFICA: (cose da controllare prima di pubblicare, oppure «niente»)"""
 
 
@@ -60,6 +70,12 @@ def italian_date(value: str | date) -> str:
     """"3 novembre 2026"."""
     day = date.fromisoformat(value) if isinstance(value, str) else value
     return f"{day.day} {MONTHS[day.month - 1]} {day.year}"
+
+
+def day_month(value: str | date) -> str:
+    """"3 novembre"."""
+    day = date.fromisoformat(str(value)) if not isinstance(value, date) else value
+    return f"{day.day} {MONTHS[day.month - 1]}"
 
 
 def euro(cents: int) -> str:
@@ -109,9 +125,17 @@ def build_request(item: dict, today: date) -> str:
         # The title on Vinted: the ad's own, or the item's name when the ad
         # has a text but no title of its own (0.11.0).
         add("Titolo attuale", listing["title"] or (item["title"] if listing["description"] else None))
+        # 0.19.0: the prices so far and the plan, for a plan that fits.
+        changes = listing["price_changes"]
+        if len(changes) > 1:
+            add("Prezzi su Vinted", ", ".join(
+                f"{euro(change['price_cents'])} dal {day_month(change['changed_on'])}" for change in changes))
+        add("Minimo attuale", euro(listing["min_price_cents"]) if listing["min_price_cents"] else None)
+        plan = item["markdown"]["plan"]
+        add("Ribasso attuale", plan["text"] + (" (piano base)" if plan["source"] == "base" else ""))
     lines += ["", STYLE]
     if on_sale:
-        lines.append(ON_SALE)
+        lines.append(AT_MINIMUM if item["markdown"]["state"] in ("at_minimum", "review", "settled") else ON_SALE)
     lines += ["", EXAMPLE, "", ANSWER_FORMAT]
     return "\n".join(lines)
 
@@ -129,7 +153,7 @@ def is_request(text: str) -> bool:
 # A label at the start of a line, in any case, maybe in bold or as a heading
 # ("**TITOLO:**", "## Prezzo:", "- Minimo :"), and what follows on its line.
 _LABEL = re.compile(
-    r"^[\s>*_#\-•]*(TITOLO|DESCRIZIONE|PREZZO|MINIMO|VERIFICA)[\s*_]*:[\s*_]*(.*)$",
+    r"^[\s>*_#\-•]*(TITOLO|DESCRIZIONE|PREZZO|MINIMO|RIBASSO|VERIFICA)[\s*_]*:[\s*_]*(.*)$",
     re.IGNORECASE,
 )
 _NUMBER = re.compile(r"\d[\d.,]*")
@@ -182,6 +206,8 @@ def parse_answer(text: str) -> dict:
             "price_cents": None,
             "min_price_cents": None,
             "check": None,
+            "markdown": None,
+            "markdown_text": None,
         }
     title = " ".join(_clean_block(blocks.get("TITOLO", [])).split()).strip("«»\"' ") or None
     description = _clean_block(blocks.get("DESCRIZIONE", [])) or None
@@ -190,6 +216,11 @@ def parse_answer(text: str) -> dict:
     if minimum is not None and price is not None and minimum > price:
         minimum = None
     check = _clean_block(blocks.get("VERIFICA", [])) or None
+    markdown_text = " ".join(_clean_block(blocks.get("RIBASSO", [])).split()) or None
+    plan = vinted_markdown.parse_plan(markdown_text)
+    markdown = None
+    if plan is not None:
+        markdown = {**plan, "source": "claude", "text": vinted_markdown.describe(plan)}
     if check and check.strip(" .!«»\"").lower() in _NOTHING:
         check = None
     return {
@@ -199,6 +230,8 @@ def parse_answer(text: str) -> dict:
         "price_cents": price,
         "min_price_cents": minimum,
         "check": check,
+        "markdown": markdown,
+        "markdown_text": markdown_text,
     }
 
 
