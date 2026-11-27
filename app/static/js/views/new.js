@@ -6,7 +6,7 @@ import { state, loadUsers, loadCategories, loadMerchants, local } from '../store
 import { createExpenseForm } from '../expense-form.js';
 import {
   h, mainHead, toast, dismissToasts, vibrate, formatEuro, loadingBlock, errorBlock, newUuid, todayIso, isPlanned,
-  dayMonthShort,
+  dayMonthShort, latestPlannedIso,
 } from '../ui.js';
 
 const DRAFT_KEY = 'draft';
@@ -38,6 +38,13 @@ export async function mount(root, ctx) {
   const draftValues = { ...draft.values };
   delete draftValues.date; // a draft from yesterday is still entered as "today" unless changed
   delete draftValues.dateTouched;
+  // 0.18.0: «Aggiungi una spesa in questo giorno» from the calendar of
+  // Movimenti opens with that day (/?data=2026-11-24).
+  const askedDate = ctx.query.get('data');
+  if (askedDate && /^\d{4}-\d{2}-\d{2}$/.test(askedDate) && askedDate >= '2000-01-01' && askedDate <= latestPlannedIso()) {
+    draftValues.date = askedDate;
+    draftValues.dateTouched = true;
+  }
   if (draftValues.categoryId && !activeCategories.some((c) => c.id === draftValues.categoryId)) {
     draftValues.categoryId = null;
   }

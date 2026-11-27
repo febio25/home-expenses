@@ -3,6 +3,16 @@
 
 import { h, todayIso, latestPlannedIso, isPlanned, PAYMENT_LABELS } from './ui.js';
 import { createCategoryPicker } from './category-picker.js';
+import { api } from './api.js';
+import { fold, typedTag } from './tags.js';
+
+// 0.18.0 (F2): the tags already used, read once per session when a «#» is
+// first typed in a note.
+let knownTags = null;
+function loadTags() {
+  if (!knownTags) knownTags = api.get('/tags').catch(() => { knownTags = null; return []; });
+  return knownTags;
+}
 
 const MAX_SUGGESTIONS = 6;
 // Light check for instant feedback; the server does the real parsing.
@@ -250,12 +260,46 @@ export function createExpenseForm({
     (value) => { state.method = value; renderDetailsSummary(); changed(); });
   const noteInput = h('input', {
     class: 'input', id: 'expense-note', type: 'text', autocomplete: 'off', maxLength: 300,
-    placeholder: 'Facoltativa', value: state.note, enterkeyhint: 'done',
-    oninput: () => { state.note = noteInput.value; renderDetailsSummary(); changed(); },
+    placeholder: 'Facoltativa, es. #vacanze', value: state.note, enterkeyhint: 'done',
+    oninput: () => { state.note = noteInput.value; renderDetailsSummary(); changed(); suggestTags(); },
     onkeydown: (event) => {
       if (event.key === 'Enter') { event.preventDefault(); noteInput.blur(); }
     },
   });
+
+  // 0.18.0 (F2): typing «#» offers the tags already used that start with
+  // what follows it; a tap completes the word.
+  const tagChips = h('div', { class: 'chips chips-scroll tag-chips', 'aria-label': 'Etichette già usate', hidden: true });
+  async function suggestTags() {
+    const typed = typedTag(noteInput.value.slice(0, noteInput.selectionStart ?? noteInput.value.length));
+    if (!typed) { tagChips.hidden = true; return; }
+    const tags = await loadTags();
+    const again = typedTag(noteInput.value.slice(0, noteInput.selectionStart ?? noteInput.value.length));
+    if (!again) { tagChips.hidden = true; return; }
+    const prefix = fold(again.partial);
+    const matches = tags.filter((item) => fold(item.tag).startsWith(prefix) && fold(item.tag) !== prefix)
+      .slice(0, MAX_SUGGESTIONS);
+    tagChips.replaceChildren(...matches.map((item) => h('button', {
+      class: 'chip', type: 'button',
+      // Keep the keyboard open: the tap must not take the focus off the note.
+      onpointerdown: (event) => event.preventDefault(),
+      onclick: () => {
+        const end = noteInput.selectionStart ?? noteInput.value.length;
+        const before = noteInput.value.slice(0, again.start);
+        const after = noteInput.value.slice(end).replace(/^[\p{L}\p{N}_-]*/u, '');
+        const insert = `#${item.tag}${after.startsWith(' ') ? '' : ' '}`;
+        noteInput.value = `${before}${insert}${after}`.slice(0, 300);
+        const caret = Math.min(before.length + insert.length, noteInput.value.length);
+        noteInput.setSelectionRange(caret, caret);
+        noteInput.focus();
+        state.note = noteInput.value;
+        renderDetailsSummary();
+        changed();
+        tagChips.hidden = true;
+      },
+    }, `#${item.tag}`)));
+    tagChips.hidden = matches.length === 0;
+  }
 
   const intervalGroup = recurring ? segmented('interval', INTERVALS, state.interval,
     (value) => { state.interval = value; renderDetailsSummary(); changed(); }) : null;
@@ -308,7 +352,7 @@ export function createExpenseForm({
     ...(recurring ? [h('span', { class: 'label' }, 'Si ripete ogni'), intervalGroup] : []),
     h('span', { class: 'label' }, recurring ? 'Paga' : 'Pagato da'), paidByGroup,
     h('span', { class: 'label' }, 'Metodo di pagamento'), methodGroup,
-    h('label', { class: 'label', for: 'expense-note' }, 'Nota'), noteInput,
+    h('label', { class: 'label', for: 'expense-note' }, 'Nota'), noteInput, tagChips,
     h('button', { class: 'btn btn-quiet btn-block more-close', type: 'button', onclick: () => setOpen(false) },
       'Chiudi dettagli'));
 

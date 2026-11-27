@@ -12,8 +12,11 @@ planned expenses.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+
+# Tags named in the text (0.18.0); the others are counted.
+MAX_TAGS_LISTED = 12
 
 MONTHS = [
     "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
@@ -62,6 +65,7 @@ class Movements:
     planned_count: int = 0  # expenses only: dated after today
     planned_cents: int = 0
     voucher_cents: int = 0  # incomes only: meal vouchers
+    tags: list[str] = field(default_factory=list)  # expenses only (0.18.0): tags of the notes
 
 
 @dataclass
@@ -172,5 +176,15 @@ def build_brief(
             f"- {_count(expenses.planned_count, 'spesa ha', 'spese hanno')} una data futura "
             f"({euro(expenses.planned_cents)} in tutto): sono previste (addebiti già noti) e non ancora "
             "pagate, ma contano già nel loro mese."
+        )
+    if expenses is not None and expenses.file and expenses.tags:
+        shown = ", ".join(f"#{tag}" for tag in expenses.tags[:MAX_TAGS_LISTED])
+        rest = len(expenses.tags) - MAX_TAGS_LISTED
+        more = f" e altre {rest}" if rest > 0 else ""
+        lines.append(
+            f"- Etichette nella nota: le parole che iniziano con # (qui {shown}{more}) raggruppano "
+            "spese di categorie diverse fatte per uno stesso scopo, per esempio un viaggio o un "
+            "lavoro in casa. Una spesa può averne più di una; maiuscole e accenti non contano. "
+            "Il totale di un'etichetta è la somma delle spese che la hanno nella nota."
         )
     return "\n".join(lines) + "\n"

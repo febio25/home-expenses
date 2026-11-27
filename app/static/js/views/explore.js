@@ -8,7 +8,7 @@
 import { api } from '../api.js';
 import {
   h, icon, formatEuro, formatSignedEuro, monthLabel, currentMonth, shiftMonth, todayIso,
-  loadingBlock, errorBlock,
+  latestPlannedMonth, latestPlannedIso, loadingBlock, errorBlock,
 } from '../ui.js';
 
 const VIEWS = [
@@ -27,6 +27,9 @@ const SECTIONS = {
   house: {
     title: 'Esplora', base: '/riepilogo/esplora', back: '/riepilogo',
     backLabel: 'Torna al riepilogo', api: '/summary/period',
+    // 0.18.0 (F10): the household periods reach the planned expenses, as
+    // the Riepilogo and its chart do; the Vinted ones stop at today.
+    planned: true,
   },
   vinted: {
     title: 'Esplora Vinted', base: '/vinted/riepilogo/esplora', back: '/vinted/riepilogo',
@@ -83,11 +86,11 @@ export function rangeLabel(start, end) {
 // What the address asks for, made safe: "?vista=anno&anno=2026",
 // "?vista=mese&mese=2026-11", "?vista=6mesi&mese=2026-11",
 // "?vista=date&dal=2026-03-15&al=2026-08-03".
-function periodFromQuery(query) {
-  const now = currentMonth();
+function periodFromQuery(query, limits) {
+  const now = limits.month; // the furthest month the arrows reach
   const view = VIEWS.some((item) => item.id === query.get('vista')) ? query.get('vista') : 'anno';
   let month = query.get('mese');
-  month = month && MONTH_SHAPE.test(month) ? month : now;
+  month = month && MONTH_SHAPE.test(month) ? month : currentMonth();
   if (month > now) month = now;
   if (month < EARLIEST_MONTH) month = EARLIEST_MONTH;
   let year = Number(query.get('anno'));
@@ -95,8 +98,8 @@ function periodFromQuery(query) {
   if (!Number.isInteger(year) || year < 2000 || year > thisYear) year = Number(month.slice(0, 4));
   let from = query.get('dal');
   let to = query.get('al');
-  if (!validDay(from) || !validDay(to) || from > to) {
-    from = `${now.slice(0, 4)}-01-01`;
+  if (!validDay(from) || !validDay(to) || from > to || to > limits.day) {
+    from = `${currentMonth().slice(0, 4)}-01-01`;
     to = todayIso();
   }
   return { view, month, year, from, to };
@@ -117,11 +120,19 @@ export function explorePath(section, month) {
   return pathOf(section, { view: 'anno', year: Number(month.slice(0, 4)) });
 }
 
-// First and last day (never after today), the label between the arrows and
-// whether the arrows can move.
-function bounds(period) {
-  const today = todayIso();
-  const now = currentMonth();
+// How far forward a section looks: the last month and day an expense can
+// be planned in for the household (0.18.0), today for Vinted.
+function limitsOf(config) {
+  return config.planned
+    ? { month: latestPlannedMonth(), day: latestPlannedIso() }
+    : { month: currentMonth(), day: todayIso() };
+}
+
+// First and last day (never after limits.day), the label between the
+// arrows and whether the arrows can move.
+function bounds(period, limits) {
+  const today = limits.day;
+  const now = limits.month;
   if (period.view === 'mese') {
     return {
       start: `${period.month}-01`, end: earlier(lastDayOf(period.month), today),
@@ -154,8 +165,8 @@ function bounds(period) {
 
 // Moving to another view keeps the time being looked at: the month or the
 // year where the current period ends, or its dates.
-function switchTo(period, view) {
-  const { start, end } = bounds(period);
+function switchTo(period, view, limits) {
+  const { start, end } = bounds(period, limits);
   const endMonth = end.slice(0, 7);
   return {
     ...period, view, month: endMonth, year: Number(end.slice(0, 4)),
@@ -201,6 +212,15 @@ function balanceRow(name, meta, amount, amountClass = '') {
     h('span', { class: `balance-amount ${amountClass}`.trim() }, amount));
 }
 
+// "29 spese, di cui previste dopo oggi: 120,00 €" (0.18.0, F10): known
+// debits and bills dated after today count in their period, as in the
+// Riepilogo, and are named so they are not taken for money already spent.
+function expenseMeta(totals) {
+  if (!totals.expense_count) return 'Nessuna spesa';
+  const count = plural(totals.expense_count, 'spesa', 'spese');
+  return totals.planned_count ? `${count}, di cui previste dopo oggi: ${formatEuro(totals.planned_cents)}` : count;
+}
+
 function houseFigures(totals) {
   const largest = Math.max(totals.income_cents, totals.expense_cents, 1);
   let incomeMeta = 'Nessuna entrata';
@@ -213,8 +233,7 @@ function houseFigures(totals) {
   const parts = [
     h('figure', { class: 'card cumul', 'aria-label': 'Entrate e spese del periodo' },
       cumulRow('Entrate', totals.income_cents, incomeMeta, incomeParts, largest),
-      cumulRow('Spese', totals.expense_cents,
-        totals.expense_count ? plural(totals.expense_count, 'spesa', 'spese') : 'Nessuna spesa',
+      cumulRow('Spese', totals.expense_cents, expenseMeta(totals),
         [{ kind: 'expense', cents: totals.expense_cents }], largest)),
   ];
   // As in the Riepilogo: without incomes, minus the expenses would look
@@ -261,7 +280,8 @@ export function mountFor(section) {
 
 async function mount(root, ctx, section) {
   const config = SECTIONS[section];
-  let period = periodFromQuery(ctx.query);
+  const limits = limitsOf(config);
+  let period = periodFromQuery(ctx.query, limits);
   let request = 0; // the latest load wins
   const backLink = h('a', {
     class: 'page-back', href: config.back, 'aria-label': config.backLabel,
@@ -278,11 +298,11 @@ async function mount(root, ctx, section) {
   function drawTabs() {
     tabs.replaceChildren(...VIEWS.map((item) => h('a', {
       class: `seg-item${item.id === period.view ? ' is-selected' : ''}`,
-      href: pathOf(section, switchTo(period, item.id)),
+      href: pathOf(section, switchTo(period, item.id, limits)),
       'aria-current': item.id === period.view ? 'page' : null,
       onclick: (event) => {
         event.preventDefault();
-        if (item.id !== period.view) show(switchTo(period, item.id), { redrawPicker: true });
+        if (item.id !== period.view) show(switchTo(period, item.id, limits), { redrawPicker: true });
       },
     }, item.label)));
   }
@@ -293,7 +313,7 @@ async function mount(root, ctx, section) {
     const field = (id, label, value) => h('div', {},
       h('label', { class: 'label', for: id }, label),
       h('input', {
-        class: 'input', id, type: 'date', min: EARLIEST_DAY, max: todayIso(), value, required: true,
+        class: 'input', id, type: 'date', min: EARLIEST_DAY, max: limits.day, value, required: true,
         onchange: changed,
       }));
     const fields = h('div', { class: 'period-range' },
@@ -332,7 +352,7 @@ async function mount(root, ctx, section) {
     period = next;
     const mine = ++request;
     history.replaceState(history.state, '', pathOf(section, period));
-    const range = bounds(period);
+    const range = bounds(period, limits);
     drawTabs();
     if (redrawPicker || !pickerSlot.firstChild) {
       pickerSlot.replaceChildren(period.view === 'date' ? datePicker() : stepper(range));

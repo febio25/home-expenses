@@ -1,23 +1,23 @@
-// "Riepilogo": expenses of the month, incomes and the difference, a small
-// chart of the last six months, then the expenses per category.
-// Deliberately simple: the real analysis happens on the exported CSV. Each
-// category opens the list of its expenses (summary-category.js); the
-// "Entrate" row opens the incomes of the month (summary-incomes.js).
+// "Riepilogo" (rebuilt in 0.18.0, R1): the balance of the month as a ledger,
+// the bars of six months (a tap shows that month), then the categories of
+// the expenses or of the incomes. Deliberately simple: the real analysis
+// happens on the exported CSV. An expense category opens the list of its
+// expenses (summary-category.js); an income category, the month's pay slip
+// in Movimenti with its rows highlighted.
 
 import { api } from '../api.js';
 import { viewCache, sameData } from '../cache.js';
 import { state } from '../store.js';
 import {
-  h, mainHead, formatEuro, euroParts, formatSignedEuro, formatShare, monthLabel, currentMonth, latestPlannedMonth,
+  h, mainHead, formatEuro, formatSignedEuro, formatShare, monthLabel, currentMonth, shiftMonth, latestPlannedMonth,
   dayMonthShort, loadingBlock, errorBlock,
 } from '../ui.js';
-import { monthSwitcher, monthFromQuery } from './movements.js';
+import { monthSwitcher, monthFromQuery, movementsPath, incomesPath } from './movements.js';
 import { explorePath } from './explore.js';
 
 const TREND_MONTHS = 6;
 
-// Donut of the month, shared by the expenses (here) and the incomes
-// (summary-incomes.js): both summaries carry total_cents and by_category,
+// Donut of the month, for the expenses and for the incomes: both summaries carry total_cents and by_category,
 // largest first. The legend next to the ring names every slice with its
 // share, so color is never the only cue. Palettes checked with the dataviz
 // validator on the white card.
@@ -109,77 +109,148 @@ export function donut(summary, title, palette) {
     legend);
 }
 
-// --- incomes and difference -------------------------------------------------
+// --- the balance of the month (0.18.0, R1) ---------------------------------------
+//
+// «Da ragioniere»: one card, read top to bottom like a ledger. Entrate (with
+// the meal vouchers indented under them), Spese with the minus sign, a rule,
+// «Differenza finora»; then, while the month is not over, the recurring
+// incomes still expected, another rule and «A fine mese», double underlined.
+// A month that is over ends with its «Differenza». Entrate and Spese open
+// the month's lists in Movimenti. A month with no income and none expected
+// shows no difference: minus the expenses would read as a deficit that is
+// not there.
 
 function signClass(cents) {
   if (cents > 0) return 'is-positive';
   return cents < 0 ? 'is-negative' : 'is-zero';
 }
 
-// Incomes of the month (a link to their summary) and, when there are any,
-// incomes minus expenses. A month with no income recorded shows no
-// difference: minus the expenses would read as a deficit that is not there.
-// Meal vouchers are an income like the others (category "Buoni pasto"):
-// their part is named under the total, and the difference includes them,
-// because what they paid for is among the expenses, in full.
-function balanceCard(summary, month) {
-  const hasIncome = summary.income_count > 0;
-  const count = summary.income_count === 1 ? '1 entrata' : `${summary.income_count} entrate`;
-  // "4 entrate, di cui 160,00 € in buoni pasto"; a no-break space keeps
-  // "buoni pasto" on one line when the text wraps.
-  const meta = summary.voucher_cents > 0
-    ? `${count}, di cui ${formatEuro(summary.voucher_cents)} in buoni pasto`
-    : count;
-  const rows = [h('a', {
-    class: 'balance-row balance-link', href: incomeSummaryPath(month), dataset: { link: '' },
-    'aria-label': hasIncome
-      ? `Entrate: ${formatEuro(summary.income_cents)}, ${meta}. Vedi le entrate per categoria`
-      : 'Nessuna entrata registrata. Vedi o aggiungi le entrate',
-  },
-  h('span', { class: 'balance-main' },
-    h('span', { class: 'balance-name' }, 'Entrate'),
-    h('span', { class: 'balance-meta' }, hasIncome ? meta : 'Stipendi, rimborsi, regali: aggiungili qui')),
-  h('span', { class: 'balance-amount' }, hasIncome ? formatEuro(summary.income_cents) : 'Nessuna'),
-  h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›'))];
+const plural = (count, one, many) => (count === 1 ? `1 ${one}` : `${count} ${many}`);
 
-  // 0.14.0: recurring incomes due in the month and not registered yet. In
-  // the month in progress the difference would otherwise sit far below
-  // zero until the salary arrives; with them it says where the month is
-  // heading, and "finora" keeps what has happened in view.
-  const expected = summary.expected_incomes || [];
-  if (expected.length) {
-    const ahead = month >= currentMonth();
-    const name = ahead ? 'Attese' : 'Da registrare';
-    const listed = expected.slice(0, 2)
-      // No-break spaces: "27 nov" and the name stay together when it wraps.
-      .map((item) => `${item.category_name} ${item.received_by_name}\u00a0${dayMonthShort(item.due_date).replace(' ', '\u00a0')}`);
-    if (expected.length > 2) listed.push(`altre ${expected.length - 2}`);
-    rows.push(h('a', {
-      class: 'balance-row balance-link balance-expected', href: '/ricorrenti', dataset: { link: '' },
-      'aria-label': `${name}: ${formatEuro(summary.expected_income_cents)}, ${listed.join(', ')}. Vedi le ricorrenti`,
-    },
-    h('span', { class: 'balance-main' },
-      h('span', { class: 'balance-name' }, name),
-      h('span', { class: 'balance-meta' }, listed.join(' · '))),
-    h('span', { class: 'balance-amount' }, `+${formatEuro(summary.expected_income_cents)}`),
-    h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›')));
-    const projected = summary.balance_cents + summary.expected_income_cents;
-    const meta = ahead ? 'Con le entrate attese' : 'Con quelle da registrare';
-    rows.push(h('div', { class: 'balance-row' },
-      h('span', { class: 'balance-main' },
-        h('span', { class: 'balance-name' }, 'Differenza'),
-        h('span', { class: 'balance-meta' },
-          hasIncome ? `${meta}; finora ${formatSignedEuro(summary.balance_cents)}` : meta)),
-      h('span', { class: `balance-amount balance-diff ${signClass(projected)}` }, formatSignedEuro(projected))));
-  } else if (hasIncome) {
-    rows.push(h('div', { class: 'balance-row' },
-      h('span', { class: 'balance-main' },
-        h('span', { class: 'balance-name' }, 'Differenza'),
-        h('span', { class: 'balance-meta' }, 'Entrate meno spese')),
-      h('span', { class: `balance-amount balance-diff ${signClass(summary.balance_cents)}` },
-        formatSignedEuro(summary.balance_cents))));
+function ledgerLine({ name, meta = null, amount, href = null, label = null, kind = '' }) {
+  const main = h('span', { class: 'ledger-main' },
+    h('span', { class: 'ledger-name' }, name),
+    meta ? h('span', { class: 'ledger-meta' }, meta) : null);
+  const figure = h('span', { class: 'ledger-amount' }, amount);
+  const className = `ledger-line ${kind}`.trim();
+  return href
+    ? h('a', { class: `${className} ledger-link`, href, dataset: { link: '' }, 'aria-label': label }, main, figure)
+    : h('div', { class: className }, main, figure);
+}
+
+function ledgerCard(summary, month) {
+  const now = currentMonth();
+  const hasIncome = summary.income_count > 0;
+  // Only while the month is not over: a past month's unregistered salary
+  // is a reminder of Ricorrenti, not part of its result.
+  const expected = month >= now ? (summary.expected_incomes || []) : [];
+  const lines = [];
+
+  lines.push(ledgerLine({
+    name: 'Entrate',
+    meta: hasIncome ? plural(summary.income_count, 'entrata', 'entrate') : 'Nessuna entrata registrata',
+    amount: formatEuro(summary.income_cents),
+    href: incomesPath(month),
+    label: `Entrate: ${formatEuro(summary.income_cents)}. Vedi le entrate del mese`,
+  }));
+  if (summary.voucher_cents > 0) {
+    lines.push(ledgerLine({
+      name: 'di cui buoni pasto', amount: formatEuro(summary.voucher_cents), kind: 'is-detail',
+    }));
   }
-  return h('div', { class: 'card balance' }, rows);
+  lines.push(ledgerLine({
+    name: 'Spese',
+    meta: summary.expense_count ? plural(summary.expense_count, 'spesa', 'spese') : 'Nessuna spesa',
+    amount: summary.total_cents ? `− ${formatEuro(summary.total_cents)}` : formatEuro(0),
+    href: movementsPath(month),
+    label: `Spese: ${formatEuro(summary.total_cents)}. Vedi le spese del mese`,
+  }));
+
+  if (hasIncome || expected.length) {
+    const diffName = month === now ? 'Differenza finora' : 'Differenza';
+    const signed = (cents) => formatSignedEuro(cents).replace(/^([+−])/, '$1 ');
+    if (expected.length) {
+      lines.push(ledgerLine({
+        name: diffName, amount: signed(summary.balance_cents),
+        kind: `is-sum ledger-diff ${signClass(summary.balance_cents)}`,
+      }));
+      const listed = expected.slice(0, 2)
+        // No-break spaces: "27 nov" and the name stay together when it wraps.
+        .map((item) => `${item.category_name} ${item.received_by_name}, ${dayMonthShort(item.due_date).replace(' ', ' ')}`);
+      if (expected.length > 2) listed.push(`altre ${expected.length - 2}`);
+      lines.push(ledgerLine({
+        name: 'Entrate attese', meta: listed.join(' · '),
+        amount: `+ ${formatEuro(summary.expected_income_cents)}`,
+        href: '/ricorrenti', kind: 'is-expected',
+        label: `Entrate attese: ${formatEuro(summary.expected_income_cents)}, ${listed.join(', ')}. Vedi le ricorrenti`,
+      }));
+      const projected = summary.balance_cents + summary.expected_income_cents;
+      lines.push(ledgerLine({
+        name: 'A fine mese', amount: signed(projected),
+        kind: `is-sum is-final ledger-diff ${signClass(projected)}`,
+      }));
+    } else {
+      lines.push(ledgerLine({
+        name: diffName, amount: signed(summary.balance_cents),
+        kind: `is-sum is-final ledger-diff ${signClass(summary.balance_cents)}`,
+      }));
+    }
+  }
+  return h('div', { class: 'card ledger', 'aria-label': `Bilancio di ${monthLabel(month)}` }, lines);
+}
+
+// --- the bars of six months (0.18.0, R1) --------------------------------------------
+//
+// Two thin columns per month, incomes and expenses, on one shared scale,
+// with only the month's name under them: the figures are in the ledger
+// above. A tap on a month shows that month on the whole page. The columns
+// stay where they are while the month shown is among them: the window of
+// six months moves only when the arrows go past its oldest or newest month.
+// Always drawn, even when the six months are empty.
+
+function monthBars(trend, month, onPick, explore) {
+  const largest = Math.max(1, ...trend.map((item) => Math.max(item.income_cents, item.expense_cents)));
+  function bar(kind, cents) {
+    const node = h('span', { class: `trend-bar is-${kind}` });
+    if (cents > 0) node.style.height = `max(2px, ${(cents / largest) * 100}%)`;
+    else node.classList.add('is-empty');
+    return node;
+  }
+  function incomeColumn(item) {
+    if (!item.voucher_cents) return bar('income', item.income_cents);
+    const stack = h('span', { class: 'trend-stack' });
+    stack.style.height = `max(5px, ${(item.income_cents / largest) * 100}%)`;
+    const part = (kind, cents) => {
+      const node = h('span', { class: `trend-bar is-${kind}` });
+      node.style.flex = `${cents} 1 0`;
+      return node;
+    };
+    stack.append(part('voucher', item.voucher_cents));
+    const money = item.income_cents - item.voucher_cents;
+    if (money > 0) stack.append(part('income', money));
+    return stack;
+  }
+  const columns = trend.map((item) => {
+    const selected = item.month === month;
+    const incomes = item.income_count ? formatEuro(item.income_cents) : 'nessuna';
+    return h('button', {
+      class: `trend-col${selected ? ' is-selected' : ''}`, type: 'button', 'aria-pressed': String(selected),
+      'aria-label': `${monthLabel(item.month)}: entrate ${incomes}, spese ${formatEuro(item.expense_cents)}. Mostra il mese`,
+      onclick: () => { if (!selected) onPick(item.month); },
+    },
+    h('span', { class: 'trend-bars' }, incomeColumn(item), bar('expense', item.expense_cents)),
+    h('span', { class: 'trend-month' }, shortMonth(item.month)));
+  });
+  const voucherKey = trend.some((item) => item.voucher_cents)
+    ? h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-voucher' }), 'di cui buoni')
+    : null;
+  return h('figure', { class: 'card trend trend-months', 'aria-label': `Entrate e spese di ${trend.length} mesi` },
+    h('figcaption', { class: 'trend-legend' },
+      h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-income' }), 'Entrate'),
+      voucherKey,
+      h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-expense' }), 'Spese')),
+    h('div', { class: 'trend-plot' }, columns),
+    h('a', { class: 'trend-more', href: explore, dataset: { link: '' } }, 'Esplora ›'));
 }
 
 // --- last six months ----------------------------------------------------------
@@ -325,9 +396,13 @@ export function exploreLink(href) {
     h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›'));
 }
 
-// Addresses of the summary screens; the month is left out when current.
-export function summaryPath(month) {
-  return month === currentMonth() ? '/riepilogo' : `/riepilogo?mese=${month}`;
+// Addresses of the summary screen; the month is left out when current.
+// side 'incomes' (0.18.0): the categories of the incomes under the chart.
+export function summaryPath(month, side = 'expenses') {
+  const query = [];
+  if (month !== currentMonth()) query.push(`mese=${month}`);
+  if (side === 'incomes') query.push('vista=entrate');
+  return query.length ? `/riepilogo?${query.join('&')}` : '/riepilogo';
 }
 
 // "/riepilogo/categoria/3?mese=2026-10"
@@ -336,97 +411,124 @@ export function categoryPath(categoryId, month) {
   return month === currentMonth() ? base : `${base}?mese=${month}`;
 }
 
-// "/riepilogo/entrate?mese=2026-10"
-export function incomeSummaryPath(month) {
-  return month === currentMonth() ? '/riepilogo/entrate' : `/riepilogo/entrate?mese=${month}`;
+// 0.18.0: the old «Riepilogo → Entrate» became the incomes side of the
+// Riepilogo; its address (bookmarks, history) leads there.
+export const incomesRedirect = {
+  mount(root, ctx) {
+    ctx.navigate(summaryPath(monthFromQuery(ctx.query), 'incomes'), { replace: true });
+  },
+};
+
+// The categories of one side, as ring and bars in one card. Expenses open
+// the list of their category; incomes open the month's pay slip in
+// Movimenti with that category's rows highlighted (0.18.0).
+function categoryCard(summary, side, month) {
+  const incomes = side === 'incomes';
+  const total = summary.total_cents;
+  const largest = summary.by_category[0].total_cents;
+  return h('div', { class: 'card cat-card' },
+    donut(summary, incomes ? 'Entrate del mese per categoria' : 'Spese del mese per categoria',
+      incomes ? INCOME_SLICES : EXPENSE_SLICES),
+    h('ul', { class: 'bars' }, summary.by_category.map((category) => {
+      const fill = h('span', { class: 'bar-fill' });
+      // Bars are relative to the largest category, so the top one is full width.
+      fill.style.width = `${Math.max(2, Math.round((category.total_cents / largest) * 100))}%`;
+      const count = incomes
+        ? plural(category.income_count, 'entrata', 'entrate')
+        : plural(category.expense_count, 'spesa', 'spese');
+      const share = formatShare(category.total_cents, total);
+      const href = incomes
+        ? `${incomesPath(month)}${month === currentMonth() ? '?' : '&'}evidenzia=${encodeURIComponent(category.category)}`
+        : categoryPath(category.category_id, month);
+      return h('li', {},
+        h('a', {
+          class: 'bar', href, dataset: { link: '' },
+          'aria-label': `${category.category_name}: ${formatEuro(category.total_cents)}, ${share} del mese, ${count}. Vedi ${incomes ? 'le entrate' : 'le spese'}`,
+        },
+        h('span', { class: 'bar-head' },
+          h('span', { class: 'bar-name' }, category.category_name),
+          h('span', { class: 'bar-amount' }, formatEuro(category.total_cents)),
+          h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›')),
+        h('span', { class: 'bar-track' }, fill),
+        h('span', { class: 'bar-meta' }, `${share} del mese, ${count}`)));
+    })));
 }
 
 export async function mount(root, ctx) {
-  // The month is kept in the address, so coming back from a category
-  // shows the same month again.
+  // The month and the side are kept in the address, so coming back from a
+  // category shows the same again.
   let month = monthFromQuery(ctx.query);
+  let side = ctx.query.get('vista') === 'entrate' ? 'incomes' : 'expenses';
+  let windowEnd = month; // the newest month of the six columns
+  let request = 0; // the latest load wins
   const switcherSlot = h('div');
   const body = h('div');
-  root.append(
-    mainHead('Riepilogo', state.me.display_name),
-    switcherSlot, body);
+  root.append(mainHead('Riepilogo', state.me.display_name), switcherSlot, body);
+
+  // The window moves only when the month leaves it (see monthBars).
+  function placeWindow(next) {
+    if (next > windowEnd) windowEnd = next;
+    else if (next < shiftMonth(windowEnd, -(TREND_MONTHS - 1))) windowEnd = shiftMonth(next, TREND_MONTHS - 1);
+  }
 
   // quiet: see the same option in movements.js. A month seen before in this
   // session is drawn at once from memory (cache.js), then refreshed.
   async function show(nextMonth, { quiet = false } = {}) {
+    placeWindow(nextMonth);
     month = nextMonth;
-    history.replaceState(history.state, '', summaryPath(month));
+    const mine = ++request;
+    history.replaceState(history.state, '', summaryPath(month, side));
     switcherSlot.replaceChildren(monthSwitcher(month, show, { max: latestPlannedMonth() }));
-    const key = `summary:${month}`;
+    const key = `summary:${month}:${windowEnd}`;
     const cached = viewCache.get(key);
     if (cached) draw(cached);
     else if (!quiet) body.replaceChildren(loadingBlock());
     let data;
     try {
-      const [summary, trend] = await Promise.all([
+      const [summary, incomes, trend] = await Promise.all([
         api.get(`/summary?month=${month}`),
-        api.get(`/summary/trend?month=${month}&months=${TREND_MONTHS}`),
+        api.get(`/summary/incomes?month=${month}`),
+        api.get(`/summary/trend?month=${windowEnd}&months=${TREND_MONTHS}`),
       ]);
-      data = { summary, trend };
+      data = { summary, incomes, trend };
     } catch (error) {
-      if (!quiet && !cached && ctx.isCurrent() && month === nextMonth) {
+      if (!quiet && !cached && ctx.isCurrent() && mine === request) {
         body.replaceChildren(errorBlock(error, () => show(month)));
       }
       return;
     }
-    if (!ctx.isCurrent() || month !== nextMonth) return;
+    if (!ctx.isCurrent() || mine !== request) return;
     if (cached && sameData(cached, data)) return;
     viewCache.set(key, data);
     draw(data);
   }
 
-  function draw({ summary, trend }) {
-    const expenseCount = summary.expense_count === 1 ? '1 spesa' : `${summary.expense_count} spese`;
-    const parts = [
-      h('div', { class: 'receipt receipt-total' },
-        h('span', { class: 'receipt-label' }, `Spese di ${monthLabel(month)}`),
-        h('span', { class: 'receipt-figure' }, ...euroParts(summary.total_cents)),
-        h('span', { class: 'receipt-sub' }, summary.expense_count ? expenseCount : 'Nessuna spesa')),
-      balanceCard(summary, month),
-    ];
-    // The chart is left out only when the six months are all empty; the
-    // link to "Esplora" stays, for the periods before them.
-    const explore = explorePath('house', month);
-    if (trend.some((item) => item.expense_count || item.income_count)) {
-      parts.push(trendChart(trend, HOUSEHOLD_TREND, { explore }));
-    } else {
-      parts.push(h('div', { class: 'card explore-card' }, exploreLink(explore)));
-    }
-    if (summary.expense_count === 0) {
-      body.replaceChildren(...parts);
-      return;
-    }
+  function sideSwitch(data) {
+    const item = (id, label) => h('button', {
+      class: `seg-item${id === side ? ' is-selected' : ''}`, type: 'button', 'aria-pressed': String(id === side),
+      onclick: () => {
+        if (id === side) return;
+        side = id;
+        history.replaceState(history.state, '', summaryPath(month, side));
+        draw(data);
+      },
+    }, label);
+    return h('div', { class: 'seg seg-side', role: 'group', 'aria-label': 'Categorie di spese o di entrate' },
+      item('expenses', 'Spese'), item('incomes', 'Entrate'));
+  }
 
-    const largest = summary.by_category[0].total_cents;
+  function draw(data) {
+    const { summary, incomes, trend } = data;
+    const shown = side === 'incomes' ? incomes : summary;
+    const empty = side === 'incomes' ? !incomes.income_count : !summary.expense_count;
     body.replaceChildren(
-      ...parts,
-      // 0.16.0: the title introduces ring and bars, in one card.
-      h('h2', { class: 'section-title' }, 'Spese per categoria'),
-      h('div', { class: 'card cat-card' },
-        donut(summary, 'Spese del mese per categoria', EXPENSE_SLICES),
-        h('ul', { class: 'bars' }, summary.by_category.map((category) => {
-        const fill = h('span', { class: 'bar-fill' });
-        // Bars are relative to the largest category, so the top one is full width.
-        fill.style.width = `${Math.max(2, Math.round((category.total_cents / largest) * 100))}%`;
-        const count = category.expense_count === 1 ? '1 spesa' : `${category.expense_count} spese`;
-        const share = formatShare(category.total_cents, summary.total_cents);
-        return h('li', {},
-          h('a', {
-            class: 'bar', href: categoryPath(category.category_id, month), dataset: { link: '' },
-            'aria-label': `${category.category_name}: ${formatEuro(category.total_cents)}, ${share} del mese, ${count}. Vedi le spese`,
-          },
-          h('span', { class: 'bar-head' },
-            h('span', { class: 'bar-name' }, category.category_name),
-            h('span', { class: 'bar-amount' }, formatEuro(category.total_cents)),
-            h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›')),
-          h('span', { class: 'bar-track' }, fill),
-          h('span', { class: 'bar-meta' }, `${share} del mese, ${count}`)));
-        }))));
+      ledgerCard(summary, month),
+      monthBars(trend, month, (picked) => show(picked), explorePath('house', month)),
+      sideSwitch(data),
+      empty
+        ? h('div', { class: 'card cat-empty' }, h('p', { class: 'empty-text' },
+          side === 'incomes' ? `Nessuna entrata a ${monthLabel(month)}.` : `Nessuna spesa a ${monthLabel(month)}.`))
+        : categoryCard(shown, side, month));
   }
 
   ctx.onResume(({ longAway }) => { if (longAway) show(month, { quiet: true }); });

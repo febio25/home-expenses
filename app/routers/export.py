@@ -22,6 +22,8 @@ from ..export_brief import Movements, VintedItems, build_brief, period_text
 from ..money import format_cents
 from ..schemas import INCOME_CATEGORIES, ExportBriefOut
 from ..security import current_user
+from ..tags import tags_in
+from ..text import fold
 from .expenses import EXPENSE_SELECT
 from .incomes import INCOME_SELECT, income_out
 from .vinted import ITEM_SELECT, items_out
@@ -358,6 +360,17 @@ def export_brief(
         if name:
             files.append({"name": name, "url": f"/api/v1/export.csv?{query}"})
         expenses = Movements(name, spent["count"], spent["cents"], spent["planned_count"], spent["planned_cents"])
+        # 0.18.0 (F2): the tags of the period's notes, most used first, so
+        # the text can say what they are.
+        where_tags = f"{where} AND" if where else " WHERE"
+        uses: dict[str, list] = {}
+        for row in db.execute(
+            f"SELECT note FROM expenses{where_tags} instr(note, '#') > 0 ORDER BY expense_date DESC, id DESC",
+            params,
+        ):
+            for tag in tags_in(row["note"]):
+                uses.setdefault(fold(tag), [tag, 0])[1] += 1
+        expenses.tags = [tag for tag, _ in sorted(uses.values(), key=lambda item: -item[1])]
 
     if what in ("incomes", "all"):
         where, params = range_filter(start, end, column="income_date")

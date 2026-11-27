@@ -119,13 +119,15 @@ def test_summary_shows_the_salary_still_expected(phone, api, server):
     }).raise_for_status()
     add_expense(api, amount="100")
     phone.goto(f"{server}/riepilogo")
-    expected = phone.wait_for_selector(".balance-expected")
-    assert "Attese" in expected.inner_text()
+    # 0.18.0: the ledger of the month
+    expected = phone.wait_for_selector(".ledger-line.is-expected")
+    assert "Entrate attese" in expected.inner_text()
     assert "Stipendio Fabio" in plain(expected.inner_text())
-    assert "+2.100,00 €" in plain(expected.inner_text())
-    rows = phone.locator(".balance-row")
-    assert "+2.000,00 €" in plain(rows.nth(2).inner_text())  # 2.100 expected - 100 spent
-    assert "Con le entrate attese" in rows.nth(2).inner_text()
+    assert "+ 2.100,00 €" in plain(expected.inner_text())
+    final = phone.locator(".ledger-line.is-final")
+    assert "A fine mese" in final.inner_text()
+    assert "+ 2.000,00 €" in plain(final.inner_text())  # 2.100 expected - 100 spent
+    assert "Differenza finora" in phone.locator(".ledger").inner_text()
 
 
 # --- Impostazioni ---------------------------------------------------------------------------
@@ -199,7 +201,7 @@ def test_main_screens_fit_the_phone_without_errors(browser, server, api, size):
             page.wait_for_timeout(300)
             wider = page.evaluate(
                 "() => [...document.querySelectorAll('#view *')]"
-                ".filter((node) => !node.closest('.chips-scroll'))"
+                ".filter((node) => !node.closest('.chips-scroll, .pills'))"
                 ".filter((node) => node.getBoundingClientRect().right > window.innerWidth + 1)"
                 ".map((node) => node.className || node.tagName)")
             assert wider == [], f"{route} at {size} px: {wider}"

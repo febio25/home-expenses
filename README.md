@@ -40,9 +40,18 @@ esposta su internet.
   Conta subito nel suo mese (Movimenti, Riepilogo, istogramma, CSV) e porta
   l'etichetta «Prevista» finché non arriva il giorno; per correggerla si apre
   la spesa come sempre. Valgono ancora «non dopo oggi» le entrate, le date di
-  Vinted e la registrazione di una spesa ricorrente; *Esplora* conta fino a
-  oggi. Se per la stessa spesa esiste anche un modello ricorrente, alla
+  Vinted e la registrazione di una spesa ricorrente. Dalla 0.18.0 anche
+  *Esplora* le conta, con la riga «di cui previste dopo oggi». Se per la stessa spesa esiste anche un modello ricorrente, alla
   scadenza si tocca «Salta» invece di «Registra», per non averla due volte.
+- *Movimenti → Spese* dalla 0.18.0 si apre sul **calendario del mese**
+  (lunedì–domenica): sotto ogni giorno il totale in euro interi, i giorni
+  futuri in grigio con le spese previste, oggi sottolineato. Il giorno
+  scelto (all'apertura oggi; in un altro mese l'ultimo giorno con spese) si
+  apre sotto come scontrino; un giorno vuoto offre «Aggiungi una spesa in
+  questo giorno». La **lente** accanto al totale mostra il mese intero come
+  scontrino, con la ricerca e i filtri; Indietro torna al calendario, e
+  riaprendo Movimenti si parte sempre dal calendario. Le entrate restano
+  una lista (busta paga).
 - Lista dei movimenti per mese, con modifica ed eliminazione. Dalla 0.16.0
   il mese è uno scontrino: una striscia sola con il bordo strappato sopra e
   sotto, ogni giorno aperto dal suo nome in maiuscolo tra due tratteggi e
@@ -57,6 +66,19 @@ esposta su internet.
   Indietro torna ai risultati. La × torna alla lista del mese. Dalla 0.14.0
   i risultati arrivano 100 alla volta («Mostra altre 100» in fondo), mentre
   i totali in cima e quelli di ogni mese contano sempre tutti i risultati.
+  Dalla 0.18.0 la ricerca delle spese è nella lente, con i **filtri a
+  pillole** sotto la barra: Categoria, Chi (ha pagato), Metodo, Periodo
+  (questo mese, ultimi 3 mesi, quest'anno, anno scorso) ed Etichetta. Si
+  sceglie dal basso; la pillola attiva diventa verde con il valore e la ×.
+  I filtri si combinano tra loro e con il testo, funzionano anche senza
+  testo e restano nell'indirizzo (Indietro li ritrova).
+- **Etichette** (dalla 0.18.0): una parola che comincia con # nella nota di
+  una spesa («Cena #vacanze-2026») la raggruppa con le altre spese dello
+  stesso scopo, di qualsiasi categoria. Maiuscole e accenti non contano.
+  Nelle liste le etichette sono pillole sotto la spesa: toccandone una si
+  vedono tutte le spese con quell'etichetta e il loro totale. Scrivendo # nella
+  nota l'app propone le etichette già usate. Nessun campo nuovo nel database:
+  vivono nella nota, quindi anche nel CSV, e il testo dell'export le spiega.
 - Entrate (stipendi, rimborsi, regali, vendite, buoni pasto), separate dalle
   spese: in *Movimenti* l'interruttore «Spese | Entrate» passa da una lista
   all'altra, e «Nuova entrata» le registra con importo, categoria da una
@@ -66,18 +88,23 @@ esposta su internet.
   Voce | Importo, dalla più recente; in fondo il «Totale entrate» e la parte
   in buoni pasto. Le categorie sono nell'ordine Stipendio, Buoni pasto,
   Vinted, Rimborsi, Regali, Vendite, Altro.
-- Riepilogo mensile: spese del mese, entrate e differenza (entrate meno
-  spese), un piccolo istogramma degli ultimi 6 mesi con entrate e spese
-  affiancate e la differenza sotto ogni mese, poi grafico a ciambella e totale
-  per categoria. Toccando una categoria si vedono le spese che la compongono;
-  toccando *Entrate* si vedono le entrate del mese per categoria (ciambella e
-  totali) e la loro lista. Dalla 0.14.0, se nel mese ci sono entrate
-  ricorrenti non ancora registrate (lo stipendio di fine mese), la riga
-  *Attese* le elenca e la *Differenza* le conta, con sotto quella «finora»:
-  prima dello stipendio il mese non sembra più in forte perdita.
+- Riepilogo mensile, rivisto nella 0.18.0. In cima il **bilancio** del mese
+  in un riquadro, come su un registro: Entrate (con «di cui buoni pasto»),
+  Spese con il segno meno, «Differenza finora»; nel mese in corso poi le
+  entrate ricorrenti ancora attese (lo stipendio di fine mese) e «A fine
+  mese», con la doppia sottolineatura. Un mese passato finisce con la sua
+  «Differenza». Toccando Entrate o Spese si apre la lista del mese in
+  Movimenti. Sotto, l'**istogramma** di 6 mesi con entrate e spese
+  affiancate e solo i nomi dei mesi: toccando un mese tutta la pagina passa
+  a quel mese; le colonne restano ferme finché il mese mostrato è tra loro.
+  Poi l'interruttore **Spese | Entrate** per ciambella e categorie: una
+  categoria di spesa apre le sue spese; una categoria di entrata apre la
+  busta paga del mese con le sue righe evidenziate (la × toglie l'evidenza).
+  La vecchia schermata *Riepilogo → Entrate* non c'è più.
 - *Esplora* (dalla 0.9.0), dal link sotto l'istogramma: i totali di un mese,
   di un anno, degli ultimi 6 mesi o di due date a scelta, con le frecce per
-  andare avanti e indietro. Solo totali (entrate, spese con i buoni pasto in
+  andare avanti e indietro. Dalla 0.18.0 conta anche le spese previste dopo
+  oggi e arriva ai mesi in cui ce ne sono. Solo totali (entrate, spese con i buoni pasto in
   evidenza, differenza) e le date di riferimento: niente movimenti né
   categorie. C'è anche per Vinted, con vendite, spese Vinted, differenza e
   guadagno sugli articoli venduti nel periodo.
@@ -476,6 +503,11 @@ dell'acquisto, o il giorno in cui erano stati aggiunti); se un articolo non
 era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
+
+Dalla 0.17.0 alla 0.18.0 il database non cambia (schema 10, invariato):
+cambiano Movimenti (calendario, lente, filtri, etichette), Riepilogo ed
+Esplora. Tornare alla 0.17.0 resta possibile, anche con un backup fatto
+dalla 0.18.0; le etichette restano nelle note come testo.
 
 Dalla 0.16.0 alla 0.17.0, al primo avvio, il database passa dallo schema 9
 al 10 (prima l'app ne salva una copia, *Prima di un aggiornamento*): spese
@@ -966,6 +998,19 @@ CDN.
   - `GET /api/v1/incomes/categories`: ogni voce ha anche `icon` (fissa).
   - Le immagini delle icone sono Tabler Icons copiate nell'interfaccia
     (`app/static/js/category-icons.js`); l'API dà solo i nomi.
+- Dalla 0.17.0: spese ed entrate ricorrenti hanno `is_variable` (`POST`,
+  `PATCH`, risposte). `GET /api/v1/summary/recurring` → `{expenses,
+  incomes}`, ciascuno con `count`, `month_cents`, `year_cents` e
+  `has_variable`: quanto valgono al mese e all'anno i modelli attivi.
+- Dalla 0.18.0:
+  - `GET /api/v1/expenses` e `GET /api/v1/summary/search/expenses` accettano
+    gli stessi filtri: `category_id`, `paid_by_user_id`, `payment_method`,
+    `tag` («vacanze» o «#vacanze»: le spese con quell'etichetta nella nota),
+    `from` e `to`. Per i totali della ricerca `q` non è più obbligatorio.
+  - `GET /api/v1/tags`: le etichette delle note delle spese (`tag`, `count`,
+    `total_cents`, `last_date`), dalla usata più di recente.
+  - `GET /api/v1/summary/period` ha anche `planned_cents` e `planned_count`:
+    la parte delle spese del periodo con data dopo oggi.
 
 ## Sviluppo
 
@@ -1009,15 +1054,17 @@ app/
   copies.py        copie automatiche del database e ultimo backup scaricato
   export_brief.py  testo da mandare con i CSV a un assistente AI
   text.py          ricerca: testo senza maiuscole e accenti
+  tags.py          etichette #parola nelle note delle spese (0.18.0)
   vinted_listing.py  annunci Vinted: richiesta per Claude e lettura della risposta
   merchant_duplicates.py  possibili doppioni tra gli esercenti
   dates.py         intervalli di date
   schemas.py       modelli JSON dell'API
+  vinted_schemas.py  modelli JSON della sezione Vinted (dalla 0.17.0)
   migrations/      schema del database (file SQL numerati)
   cli.py           strumenti di recupero (reimpostazione password)
   routers/         endpoint: auth, expenses, incomes, recurring,
                    recurring_incomes, categories, merchants, summary,
-                   vinted, export, backup
+                   tags, vinted, vinted_photos, vinted_summary, export, backup
   static/          frontend (HTML, CSS, JavaScript, manifest, service worker)
 tests/             test automatici del server (pytest)
 tests_ui/          test dell'interfaccia in Chrome (Playwright)

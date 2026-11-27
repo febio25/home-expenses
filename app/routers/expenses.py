@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..dates import check_expense_date, range_filter, resolve_range
 from ..db import get_db, utc_now
-from ..schemas import ExpenseCreate, ExpenseCreatedOut, ExpenseDuplicateOut, ExpenseOut, ExpenseUpdate
+from ..schemas import PaymentMethod, ExpenseCreate, ExpenseCreatedOut, ExpenseDuplicateOut, ExpenseOut, ExpenseUpdate
 from ..security import current_user
+from ..tags import MAX_TAG_LENGTH, clean_tag
 from ..text import MAX_QUERY_LENGTH, clean_query, search_clause
 from ..validation import check_category, check_user, clean_note, require_amount
 from .merchants import get_or_create_merchant, prune_merchant
@@ -54,16 +55,31 @@ def expense_filters(
     date_to: date | None,
     category_id: int | None = None,
     q: str | None = None,
+    paid_by: int | None = None,
+    method: str | None = None,
+    tag: str | None = None,
 ) -> tuple[str, list]:
     """WHERE clause (possibly empty) and parameters over EXPENSE_SELECT's
     aliases. Shared by the list and by the totals of a search
-    (GET /summary/search/expenses), so both always count the same rows."""
+    (GET /summary/search/expenses), so both always count the same rows.
+
+    0.18.0 (F6, F2): who paid, the payment method and a tag of the note
+    narrow it too. A tag that is not one ("#", "-") finds nothing."""
     start, end = resolve_range(month, date_from, date_to)
     where, params = range_filter(start, end)
     conditions = [where.removeprefix(" WHERE ")] if where else []
     if category_id is not None:
         conditions.append("e.category_id = ?")
         params.append(category_id)
+    if paid_by is not None:
+        conditions.append("e.paid_by_user_id = ?")
+        params.append(paid_by)
+    if method is not None:
+        conditions.append("e.payment_method = ?")
+        params.append(method)
+    if tag is not None:
+        conditions.append("has_tag(e.note, ?) = 1")
+        params.append(clean_tag(tag))
     text = clean_query(q)
     if text:
         clause, clause_params = search_clause(
@@ -81,12 +97,32 @@ SEARCH_QUERY = Query(
 )
 
 
+class ExpenseFilters:
+    """The filters of the search of "Movimenti" (0.18.0, F6), shared by
+    GET /expenses and GET /summary/search/expenses."""
+
+    def __init__(
+        self,
+        category_id: int | None = Query(None, description="Only expenses of this category"),
+        paid_by_user_id: int | None = Query(None, description="Only expenses paid by this user"),
+        payment_method: PaymentMethod | None = Query(None, description="Only this payment method"),
+        tag: str | None = Query(
+            None, max_length=MAX_TAG_LENGTH + 1,
+            description="Only expenses whose note carries this tag (\"vacanze\" or \"#vacanze\")",
+        ),
+    ):
+        self.category_id = category_id
+        self.paid_by = paid_by_user_id
+        self.method = payment_method
+        self.tag = tag
+
+
 @router.get("", response_model=list[ExpenseOut])
 def list_expenses(
     month: str | None = Query(None, description="YYYY-MM; wins over from/to"),
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
-    category_id: int | None = Query(None, description="Only expenses of this category"),
+    filters: ExpenseFilters = Depends(),
     q: str | None = SEARCH_QUERY,
     limit: int | None = Query(None, ge=1, le=MAX_PAGE, description="Page size (0.14.0); all rows without it"),
     offset: int = Query(0, ge=0, description="Rows to skip, with limit"),
@@ -100,9 +136,12 @@ def list_expenses(
     With ``q`` (0.9.0), only the expenses that match it: the search of
     "Movimenti", over every month unless a range is given too. With
     ``limit`` and ``offset`` (0.14.0), one page of the list; the totals of
-    all the matches come from GET /summary/search/expenses.
+    all the matches come from GET /summary/search/expenses. 0.18.0: also
+    by who paid, payment method and tag (see ExpenseFilters).
     """
-    where, params = expense_filters(month, date_from, date_to, category_id, q)
+    where, params = expense_filters(
+        month, date_from, date_to, filters.category_id, q, filters.paid_by, filters.method, filters.tag
+    )
     page = ""
     if limit is not None:
         page = " LIMIT ? OFFSET ?"

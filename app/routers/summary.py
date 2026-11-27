@@ -11,6 +11,7 @@ from fractions import Fraction
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from .. import dates
 from ..dates import add_months, month_bounds, resolve_range
 from ..db import get_db
 from ..schemas import (
@@ -24,7 +25,7 @@ from ..schemas import (
 )
 from ..security import current_user
 from ..text import MAX_QUERY_LENGTH
-from .expenses import EXPENSE_SELECT, expense_filters
+from .expenses import EXPENSE_SELECT, ExpenseFilters, expense_filters
 from .incomes import INCOME_SELECT, income_filters
 
 router = APIRouter(prefix="/summary", tags=["summary"], dependencies=[Depends(current_user)])
@@ -119,12 +120,21 @@ def _search_totals(db: sqlite3.Connection, select: str, where: str, params: list
 
 @router.get("/search/expenses", response_model=SearchTotalsOut)
 def search_expense_totals(
-    q: str = Query(..., min_length=1, max_length=MAX_QUERY_LENGTH, description="As in GET /expenses"),
+    q: str | None = Query(None, max_length=MAX_QUERY_LENGTH, description="As in GET /expenses"),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    filters: ExpenseFilters = Depends(),
     db: sqlite3.Connection = Depends(get_db),
 ):
     """Totals of a search in "Movimenti" over every month (0.14.0): the list
-    comes a page at a time from GET /expenses?q=…&limit=…&offset=…"""
-    where, params = expense_filters(None, None, None, None, q)
+    comes a page at a time from GET /expenses?q=…&limit=…&offset=…
+
+    0.18.0 (F6): the text is optional, and the filters of GET /expenses
+    (period, category, who paid, method, tag) apply here as well, so the
+    totals always count the same rows as the list."""
+    where, params = expense_filters(
+        None, date_from, date_to, filters.category_id, q, filters.paid_by, filters.method, filters.tag
+    )
     return _search_totals(db, EXPENSE_SELECT, where, params, "expense_date")
 
 
@@ -207,10 +217,14 @@ def period_summary(
     0.9.0). Only totals: no categories, no list."""
     start, end = resolve_range(None, date_from, date_to)
     window = (start.isoformat(), end.isoformat())
+    # 0.18.0 (F10): the period may reach past today; what is dated after
+    # today is planned (known debits, bills), counted and named apart.
     spent = db.execute(
-        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count"
+        "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count,"
+        "       COALESCE(SUM(expense_date > ?), 0) AS planned_count,"
+        "       COALESCE(SUM(CASE WHEN expense_date > ? THEN amount_cents END), 0) AS planned_cents"
         "  FROM expenses WHERE expense_date >= ? AND expense_date <= ?",
-        window,
+        (dates.today().isoformat(), dates.today().isoformat(), *window),
     ).fetchone()
     income = db.execute(
         "SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS count,"
@@ -226,6 +240,8 @@ def period_summary(
         "voucher_cents": income["vouchers"],
         "expense_cents": spent["cents"],
         "expense_count": spent["count"],
+        "planned_cents": spent["planned_cents"],
+        "planned_count": spent["planned_count"],
         "balance_cents": income["cents"] - spent["cents"],
     }
 

@@ -1080,3 +1080,143 @@ a.btn-text { text-decoration: none; }
 
 /* Six choices of «Si ripete ogni» (with «4 mesi»): two rows of three. */
 .seg.seg-grid3 { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 3px; }
+
+/* --- 0.18.0: Riepilogo (R1) ----------------------------------------------------- */
+
+/* the balance of the month, «da ragioniere»: figures in one column, a rule
+   above each sum, the result double underlined */
+.ledger { margin-top: 12px; padding: 6px 16px 10px; overflow: hidden; }
+.ledger-line {
+  position: relative; display: flex; align-items: baseline; gap: 12px;
+  padding: 8px 0; color: inherit; text-decoration: none;
+}
+a.ledger-line { margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+a.ledger-line:active { background: var(--primary-soft); }
+.ledger-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ledger-name { font-weight: 500; }
+.ledger-meta { color: var(--muted); font-size: 0.8125rem; }
+.ledger-amount { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ledger-line.is-detail { padding: 0 0 6px 16px; margin-top: -6px; color: var(--muted); font-size: 0.8125rem; }
+.ledger-line.is-detail .ledger-name, .ledger-line.is-detail .ledger-amount { font-weight: 400; }
+.ledger-line.is-sum { margin-top: 6px; padding-top: 10px; }
+.ledger-line.is-sum::before {
+  content: ''; position: absolute; top: 0; right: 0; width: 46%; border-top: 1px solid var(--ink);
+}
+.ledger-line.is-expected .ledger-name { font-weight: 400; }
+.ledger-line.is-expected .ledger-amount { color: var(--muted); font-weight: 500; }
+.ledger-line.is-final .ledger-name { font-weight: 700; }
+.ledger-line.is-final .ledger-amount {
+  font-size: 1.25rem; font-weight: 700;
+  text-decoration: underline double; text-underline-offset: 5px; text-decoration-thickness: 1px;
+}
+.ledger-diff.is-positive .ledger-amount { color: var(--primary); }
+.ledger-diff.is-negative .ledger-amount { color: var(--danger); }
+
+/* the bars of six months: names only, a tap shows the month */
+.trend-months { padding-top: 12px; }
+.trend-months .trend-legend { padding: 0 4px; }
+.trend-months .trend-col { padding-bottom: 4px; }
+.trend-more {
+  display: block; margin: 8px 4px 0; padding: 6px 0 2px; text-align: right;
+  color: var(--primary); font-weight: 600; text-decoration: none;
+}
+
+.seg-side { margin-top: 12px; }
+.cat-empty { margin-top: 12px; padding: 16px; }
+.seg-side + .cat-card { margin-top: 12px; }
+
+/* G3: on a narrow screen the legend keeps each name on one line */
+@media (max-width: 359px) {
+  .donut { gap: 10px; padding: 12px; }
+  .donut-ring { width: 96px; height: 96px; }
+  .donut-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+}
+
+/* the incomes of one category highlighted in the pay slip (from the Riepilogo) */
+.slip-row.is-marked { background: #E6F4EC; }
+.slip-row.is-marked + .slip-row.is-marked { border-top-color: #CFE7DA; }
+.slip-marked {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 0 0 10px; padding: 4px 4px 4px 10px; background: #E6F4EC; border-radius: 8px;
+  color: var(--primary-press); font-size: 0.875rem; font-weight: 500;
+}
+.slip-marked-text { min-width: 0; }
+.slip-marked-clear {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px;
+  border: 0; border-radius: 10px; background: transparent; color: inherit;
+}
+.slip-marked-clear:active { background: var(--primary-soft); }
+
+/* --- 0.18.0: Movimenti with the calendar (F15), filters (F6), tags (F2) ----------- */
+
+.cal-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0; }
+.cal-total .month-total { margin: 0; }
+.cal-total:empty { display: none; }
+.mode-btns { display: flex; gap: 6px; flex: none; }
+.mode-btn {
+  display: grid; place-items: center; width: 40px; height: 40px; padding: 0;
+  border: 1.5px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink);
+}
+.mode-btn .icon, .mode-btn svg { width: 20px; height: 20px; }
+.mode-btn.is-active { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+/* the month as a calendar, Monday first; the total of each day in whole euros */
+.cal { margin-top: 8px; padding: 10px 6px 12px; background: var(--surface); border-radius: var(--radius-card); }
+.cal-head, .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-head { margin-bottom: 4px; color: var(--muted); font-size: 0.75rem; text-align: center; }
+.cal-grid { row-gap: 2px; }
+.cal-day {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 1px;
+  min-height: 48px; padding: 6px 0 4px; border: 0; border-radius: 10px; background: transparent; color: var(--ink);
+}
+.cal-day:active { background: var(--primary-soft); }
+.cal-num { font-size: 0.9375rem; font-weight: 500; line-height: 1.2; }
+.cal-sum { min-height: 1em; color: var(--muted); font-size: 0.6875rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.cal-day.is-today .cal-num { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 2px; }
+.cal-day.is-future .cal-num, .cal-day.is-future .cal-sum { color: #9AA8A1; }
+.cal-day.is-selected { background: var(--primary); }
+.cal-day.is-selected .cal-num, .cal-day.is-selected .cal-sum { color: #fff; }
+.cal-receipt .roll { margin-top: 22px; }
+.cal-empty { margin-top: 12px; padding: 18px 16px; }
+
+/* filters of the search: pills under «Cerca nelle spese», in one row that scrolls */
+.pills {
+  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  margin: -4px calc(-1 * var(--gap)) 12px; padding: 0 var(--gap) 2px;
+}
+.pills::-webkit-scrollbar { display: none; }
+.pill {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 12px;
+  border: 1.5px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink);
+  font-size: 0.875rem; font-weight: 500; white-space: nowrap;
+}
+.pill-caret { color: var(--muted); font-size: 0.75rem; }
+.pill.is-active { padding: 0; gap: 0; background: var(--primary); border-color: var(--primary); color: #fff; }
+.pill-main, .pill-clear { border: 0; background: transparent; color: inherit; font: inherit; min-height: 36px; }
+.pill-main { padding: 4px 4px 4px 12px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+.pill-clear { display: grid; place-items: center; width: 34px; padding: 0 6px 0 0; }
+.pill-clear svg { width: 16px; height: 16px; }
+
+/* tags of the note under a row: links of their own over the row's bottom edge */
+.row-wrap { position: relative; }
+.row.has-tags { padding-bottom: 38px; }
+.roll .row.has-tags { padding-bottom: 38px; }
+.row-tags {
+  position: absolute; left: 0; right: 76px; bottom: 6px;
+  display: flex; gap: 6px; overflow: hidden; pointer-events: none;
+}
+.tag-pill {
+  pointer-events: auto; flex: none; max-width: 100%; padding: 3px 10px; border-radius: 999px;
+  background: var(--primary-soft); color: var(--primary-press); font-size: 0.8125rem; font-weight: 500;
+  text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tag-pill:active { background: #C5E4D5; }
+
+/* a choice from the bottom edge (filters) */
+.dialog.is-sheet {
+  width: 100%; max-width: var(--content); max-height: 80vh; margin: auto auto 0;
+  border-radius: var(--radius-card) var(--radius-card) 0 0; overflow-y: auto;
+}
+
+/* tags typed in the note: the ones already used, as chips */
+.tag-chips { margin-top: 6px; }

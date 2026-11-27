@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import get_settings
+from .tags import has_tag
 from .text import fold
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -35,6 +36,8 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     # fold(): text without case and accents, for the search (0.9.0).
     conn.create_function("fold", 1, fold, deterministic=True)
+    # has_tag(): the filter by tag of the expenses (0.18.0).
+    conn.create_function("has_tag", 2, has_tag, deterministic=True)
     return conn
 
 

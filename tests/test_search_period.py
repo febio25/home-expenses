@@ -154,7 +154,7 @@ def test_period_totals(client, categories):
     assert period(client, "2026-01-01", "2026-12-31") == {
         "start": "2026-01-01", "end": "2026-12-31",
         "income_cents": 386000, "income_count": 3, "voucher_cents": 16000,
-        "expense_cents": 17025, "expense_count": 3,
+        "expense_cents": 17025, "expense_count": 3, "planned_cents": 0, "planned_count": 0,
         "balance_cents": 386000 - 17025,
     }
     # Both ends included; a single day; a period with nothing.

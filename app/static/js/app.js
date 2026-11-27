@@ -14,8 +14,8 @@ import * as movementsView from './views/movements.js';
 import * as incomesView from './views/incomes.js';
 import * as incomeFormView from './views/income-form.js';
 import * as summaryView from './views/summary.js';
+import { incomesRedirect } from './views/summary.js';
 import * as summaryCategoryView from './views/summary-category.js';
-import * as summaryIncomesView from './views/summary-incomes.js';
 import * as settingsView from './views/settings.js';
 import * as recurringView from './views/recurring.js';
 import * as recurringFormView from './views/recurring-form.js';
@@ -37,7 +37,7 @@ const ROUTES = [
   { pattern: /^\/entrate\/(nuova|\d+)$/, view: incomeFormView, tab: 'movements' },
   { pattern: /^\/riepilogo$/, view: summaryView, tab: 'summary' },
   { pattern: /^\/riepilogo\/categoria\/(\d+)$/, view: summaryCategoryView, tab: 'summary' },
-  { pattern: /^\/riepilogo\/entrate$/, view: summaryIncomesView, tab: 'summary' },
+  { pattern: /^\/riepilogo\/entrate$/, view: incomesRedirect, tab: 'summary' },
   { pattern: /^\/riepilogo\/esplora$/, view: { mount: exploreFor('house') }, tab: 'summary' },
   { pattern: /^\/vinted$/, view: vintedView, tab: 'vinted' },
   { pattern: /^\/vinted\/riepilogo$/, view: vintedSummaryView, tab: 'vinted' },

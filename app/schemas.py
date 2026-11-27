@@ -488,6 +488,15 @@ class MonthTotals(BaseModel):
     balance_cents: int = Field(description="income_cents - expense_cents; may be negative")
 
 
+class TagOut(BaseModel):
+    """GET /tags (0.18.0): a tag of the expense notes, without "#"."""
+
+    tag: str
+    count: int = Field(description="Expenses whose note carries it")
+    total_cents: int
+    last_date: date = Field(description="Date of the latest expense carrying it")
+
+
 class PeriodTotalsOut(BaseModel):
     """GET /summary/period (0.9.0): the totals of any period, for "Esplora"."""
 
@@ -498,6 +507,8 @@ class PeriodTotalsOut(BaseModel):
     voucher_cents: int = Field(description="Part of income_cents in the category meal_voucher")
     expense_cents: int
     expense_count: int
+    planned_cents: int = Field(0, description="0.18.0: part of expense_cents dated after today")
+    planned_count: int = Field(0, description="0.18.0: how many of expense_count are dated after today")
     balance_cents: int = Field(description="income_cents - expense_cents; may be negative")
 
 

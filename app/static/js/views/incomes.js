@@ -8,7 +8,7 @@ import { api } from '../api.js';
 import { viewCache, sameData } from '../cache.js';
 import { state } from '../store.js';
 import {
-  h, mainHead, formatEuro, euroParts, monthLabel, dayMonthShort, currentMonth, todayIso, loadingBlock, errorBlock,
+  h, icon, mainHead, formatEuro, euroParts, monthLabel, dayMonthShort, currentMonth, todayIso, loadingBlock, errorBlock,
 } from '../ui.js';
 import {
   monthSwitcher, monthFromQuery, movementsSwitch, incomesPath, vintedLine,
@@ -22,7 +22,6 @@ export function newIncomePath(month) {
   return month === currentMonth() ? '/entrate/nuova' : `/entrate/nuova?mese=${month}`;
 }
 
-// Shared with the incomes summary (summary-incomes.js).
 // The sale of a Vinted item opens the item (see vintedLine).
 // showDate: in the search results, grouped by month.
 export function incomeRow(income, { showDate = false } = {}) {
@@ -53,9 +52,10 @@ function dayMonthDigits(iso) {
 // slip. A head with the period, the number of incomes and the ones still
 // expected; a table Data | Voce | Importo, newest first; at the bottom the
 // total in its own box (the «netto» of the slip), then the part in meal
-// vouchers. expected: a number, or null to leave that box out. Shared by
-// Movimenti → Entrate and Riepilogo → Entrate.
-export function payslip(incomes, { month, expected = null }) {
+// vouchers. expected: a number, or null to leave that box out.
+// marked (0.18.0): a category whose rows are highlighted, as opened from
+// the incomes side of the Riepilogo; onUnmark removes the highlight.
+export function payslip(incomes, { month, expected = null, marked = null, onUnmark = null }) {
   const total = incomes.reduce((sum, income) => sum + income.amount_cents, 0);
   const vouchers = incomes.filter((income) => income.category === 'meal_voucher')
     .reduce((sum, income) => sum + income.amount_cents, 0);
@@ -64,7 +64,8 @@ export function payslip(incomes, { month, expected = null }) {
   const rows = incomes.map((income) => {
     const href = income.vinted_item_id ? `/vinted/articolo/${income.vinted_item_id}` : `/entrate/${income.id}`;
     const meta = [income.received_by_name, income.note].filter(Boolean).join(' · ');
-    return h('a', { class: 'slip-row', href, dataset: { link: '' } },
+    const isMarked = marked !== null && income.category === marked;
+    return h('a', { class: `slip-row${isMarked ? ' is-marked' : ''}`, href, dataset: { link: '' } },
       h('span', { class: 'slip-date' }, dayMonthDigits(income.income_date)),
       h('span', { class: 'row-main' },
         h('span', { class: 'row-title' }, income.category_name),
@@ -72,7 +73,17 @@ export function payslip(incomes, { month, expected = null }) {
         income.vinted_item_id ? vintedLine(income.vinted_item_title) : null),
       h('span', { class: 'row-amount' }, formatEuro(income.amount_cents)));
   });
+  const markedRows = marked === null ? [] : incomes.filter((income) => income.category === marked);
+  const markLine = markedRows.length
+    ? h('p', { class: 'slip-marked' },
+      h('span', { class: 'slip-marked-text' },
+        `Evidenziate: ${markedRows[0].category_name} · ${formatEuro(markedRows.reduce((sum, income) => sum + income.amount_cents, 0))}`),
+      h('button', {
+        class: 'slip-marked-clear', type: 'button', 'aria-label': 'Togli l’evidenza', onclick: onUnmark,
+      }, icon('close')))
+    : null;
   return h('div', { class: 'slip' },
+    markLine,
     h('div', { class: 'slip-head' },
       box('Periodo', monthLabel(month)),
       box('Entrate', String(incomes.length)),
@@ -90,6 +101,7 @@ export function payslip(incomes, { month, expected = null }) {
 export async function mount(root, ctx) {
   let month = monthFromQuery(ctx.query);
   let search = searchFromQuery(ctx.query);
+  let marked = ctx.query.get('evidenzia') || null; // 0.18.0: a category, from the Riepilogo
   let request = 0; // the latest load wins
   const tabSlot = h('div');
   const searchSlot = searchBox({
@@ -126,11 +138,17 @@ export async function mount(root, ctx) {
     tabSlot, searchSlot, dueBanner, switcherSlot, body,
     h('div', { class: 'footer-bar' }, addLink));
 
+  function addressOf() {
+    const path = withSearch(incomesPath(month), search);
+    if (!marked || search) return path;
+    return `${path}${path.includes('?') ? '&' : '?'}evidenzia=${encodeURIComponent(marked)}`;
+  }
+
   // quiet, and the month drawn from memory: see show() in movements.js.
   async function show(nextMonth, { quiet = false } = {}) {
     month = nextMonth;
     const mine = ++request;
-    history.replaceState(history.state, '', withSearch(incomesPath(month), search));
+    history.replaceState(history.state, '', addressOf());
     tabSlot.replaceChildren(movementsSwitch('incomes', month, ctx.navigate));
     switcherSlot.replaceChildren(monthSwitcher(month, show));
     switcherSlot.hidden = Boolean(search); // a search looks at every month
@@ -195,7 +213,16 @@ export async function mount(root, ctx) {
           'Nuova entrata ricorrente')));
       return;
     }
-    body.replaceChildren(payslip(incomes, { month, expected: templates ? expectedIn(templates, month) : null }));
+    body.replaceChildren(payslip(incomes, {
+      month,
+      expected: templates ? expectedIn(templates, month) : null,
+      marked,
+      onUnmark: () => {
+        marked = null;
+        history.replaceState(history.state, '', addressOf());
+        draw(incomes);
+      },
+    }));
   }
 
   ctx.onResume(({ longAway }) => {

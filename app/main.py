@@ -28,6 +28,7 @@ from .routers import (
     recurring,
     recurring_incomes,
     summary,
+    tags,
     vinted,
     vinted_photos,
     vinted_summary,
@@ -118,7 +119,7 @@ def create_app() -> FastAPI:
 
     for module in (
         auth, expenses, incomes, recurring, recurring_incomes, categories, merchants, summary,
-        vinted, vinted_photos, vinted_summary, export, backup,
+        vinted, vinted_photos, vinted_summary, export, backup, tags,
     ):
         app.include_router(module.router, prefix=API_PREFIX)
 

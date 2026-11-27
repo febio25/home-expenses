@@ -40,6 +40,8 @@ const ICONS = {
   // income category, so the tab and the category look alike.
   tag: '<path d="M6.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M3 6v5.172a2 2 0 0 0 .586 1.414l7.71 7.71a2.41 2.41 0 0 0 3.408 0l5.592 -5.592a2.41 2.41 0 0 0 0 -3.408l-7.71 -7.71a2 2 0 0 0 -1.414 -.586h-5.172a3 3 0 0 0 -3 3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>',
+  // Tabler «calendar» (0.18.0): the calendar view of Movimenti.
+  calendar: '<path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M4 11h16"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
@@ -289,9 +291,11 @@ export function vibrate(pattern = 35) {
 
 // --- dialogs --------------------------------------------------------------
 
-export function openDialog(build) {
+// sheet (0.18.0): the dialog rises from the bottom edge, near the thumb
+// (the choices of the filters in Movimenti).
+export function openDialog(build, { sheet = false } = {}) {
   return new Promise((resolve) => {
-    const dialog = h('dialog', { class: 'dialog' });
+    const dialog = h('dialog', { class: sheet ? 'dialog is-sheet' : 'dialog' });
     let result = null;
     const finish = (value) => { result = value; dialog.close(); };
     dialog.addEventListener('close', () => { dialog.remove(); resolve(result); });
@@ -415,7 +419,7 @@ export function promptDialog({ title, label, value = '', confirmLabel = 'Salva',
 // One choice from a short list (an expense or income to link to a Vinted
 // item). options: [{ value, label, meta, amount }]. Resolves to the value
 // of the option picked, or null.
-export function choiceDialog({ title, text = null, options, empty = 'Niente da scegliere.' }) {
+export function choiceDialog({ title, text = null, options, empty = 'Niente da scegliere.', sheet = false }) {
   return openDialog((finish) => h('div', { class: 'dialog-body' },
     h('h2', { class: 'dialog-title' }, title),
     text ? h('p', { class: 'dialog-text' }, text) : null,
@@ -429,7 +433,7 @@ export function choiceDialog({ title, text = null, options, empty = 'Niente da s
       option.amount ? h('span', { class: 'dialog-option-amount' }, option.amount) : null)))
       : h('p', { class: 'dialog-text' }, empty),
     h('div', { class: 'dialog-actions' },
-      h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => finish(null) }, 'Annulla'))));
+      h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => finish(null) }, 'Annulla'))), { sheet });
 }
 
 // Loading / error placeholders used while a view fetches its data.

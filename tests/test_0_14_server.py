@@ -79,7 +79,8 @@ def test_search_totals_count_every_match_by_month(client, categories):
     assert by_category["count"] == 7
     empty = client.get(f"{API}/summary/search/expenses", params={"q": "nulla"}).json()
     assert empty == {"count": 0, "total_cents": 0, "months": []}
-    assert client.get(f"{API}/summary/search/expenses").status_code == 422
+    # 0.18.0: the text is optional (the filters search without it): every expense counts.
+    assert client.get(f"{API}/summary/search/expenses").json()["count"] >= 7
 
 
 def test_income_search_totals(client):
