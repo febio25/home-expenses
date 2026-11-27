@@ -32,7 +32,8 @@ def _section_totals(db: sqlite3.Connection, start: date, end: date) -> dict:
     ).fetchone()
     spent = db.execute(
         "SELECT COALESCE(SUM(e.amount_cents), 0) AS cents, COUNT(*) AS count,"
-        "       COALESCE(SUM(v.id IS NOT NULL), 0) AS purchases"
+        "       COALESCE(SUM(v.id IS NOT NULL), 0) AS purchases,"
+        "       COALESCE(SUM(CASE WHEN v.id IS NOT NULL THEN e.amount_cents END), 0) AS purchase_cents"
         "  FROM expenses e"
         "  JOIN categories c ON c.id = e.category_id AND c.system_key = ?"
         "  LEFT JOIN vinted_items v ON v.purchase_expense_id = e.id"
@@ -55,6 +56,8 @@ def _section_totals(db: sqlite3.Connection, start: date, end: date) -> dict:
         "expense_count": spent["count"],
         "purchase_count": spent["purchases"],
         "extra_count": spent["count"] - spent["purchases"],
+        "purchase_cents": spent["purchase_cents"],
+        "extra_cents": spent["cents"] - spent["purchase_cents"],
         "balance_cents": sales["cents"] - spent["cents"],
         "sold_count": sold["count"],
         "sold_cents": sold["cents"],

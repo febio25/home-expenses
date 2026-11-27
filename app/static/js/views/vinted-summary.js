@@ -1,13 +1,14 @@
-// Vinted → Riepilogo (0.8.0): the month of the section. Sales, Vinted
-// expenses (purchases and extras such as shipping supplies) and their
-// difference; the gain on the items sold in the month; the six-month chart
-// of the household summary with the section's figures; the year's sales
-// against the DAC7 thresholds. Deeper analysis stays on the CSV.
+// Vinted → Riepilogo (0.8.0; rebuilt in 0.18.1 like the Riepilogo of the
+// household): the month as a ledger (sales, Vinted expenses with purchases
+// and extras, the difference), the bars of six months (a tap shows that
+// month) with the way to Esplora, the year's sales against the DAC7
+// thresholds. The gain on the items sold lives in Esplora, for a month, a
+// year, six months or any dates. Deeper analysis stays on the CSV.
 
 import { api } from '../api.js';
-import { h, formatEuro, euroParts, formatSignedEuro, monthLabel, currentMonth, loadingBlock, errorBlock } from '../ui.js';
+import { h, formatEuro, formatSignedEuro, monthLabel, currentMonth, shiftMonth, loadingBlock, errorBlock } from '../ui.js';
 import { monthSwitcher, monthFromQuery } from './movements.js';
-import { trendChart, exploreLink } from './summary.js';
+import { ledgerLine, monthBars, signClass } from './summary.js';
 import { explorePath } from './explore.js';
 import { vintedHead } from './vinted.js';
 
@@ -18,44 +19,8 @@ const TREND_MONTHS = 6;
 const DAC7_SALES = 30;
 const DAC7_CENTS = 200000;
 
-// The words of the chart for the section: sales and Vinted expenses; a
-// month with purchases only has a real, negative difference.
-const VINTED_TREND = {
-  title: 'Vendite e spese Vinted',
-  income: 'Vendite',
-  expense: 'Spese',
-  noIncome: 'Nessuna vendita',
-  incomeWord: 'vendite',
-  noIncomeAria: 'nessuna',
-  note: 'Sotto ogni mese: vendite meno spese.',
-  hasDifference: (item) => item.income_count > 0 || item.expense_count > 0,
-};
-
 export function vintedSummaryPath(month) {
   return month === currentMonth() ? '/vinted/riepilogo' : `/vinted/riepilogo?mese=${month}`;
-}
-
-const plural = (count, one, many) => (count === 1 ? `1 ${one}` : `${count} ${many}`);
-
-function signClass(cents) {
-  if (cents > 0) return 'is-positive';
-  return cents < 0 ? 'is-negative' : '';
-}
-
-function row(name, meta, amount, amountClass = '') {
-  return h('div', { class: 'balance-row' },
-    h('span', { class: 'balance-main' },
-      h('span', { class: 'balance-name' }, name),
-      h('span', { class: 'balance-meta' }, meta)),
-    h('span', { class: `balance-amount ${amountClass}`.trim() }, amount));
-}
-
-function spentMeta(summary) {
-  if (!summary.expense_count) return 'Nessuna spesa Vinted nel mese';
-  const parts = [];
-  if (summary.purchase_count) parts.push(plural(summary.purchase_count, 'articolo comprato', 'articoli comprati'));
-  if (summary.extra_count) parts.push(plural(summary.extra_count, 'costo extra', 'costi extra'));
-  return parts.join(' e ');
 }
 
 function meter(label, value, share) {
@@ -77,15 +42,51 @@ function yearCard(summary) {
   ];
 }
 
+// 0.18.1: the month as a ledger, like the Riepilogo of the household.
+// Vendite (to the items sold), Spese Vinted with their purchases and extras
+// indented, the Differenza double underlined.
+function monthLedger(summary, month) {
+  const lines = [
+    ledgerLine({
+      name: 'Vendite', count: summary.sales_count, amount: formatEuro(summary.sales_cents),
+      href: '/vinted?filtro=venduti', label: `Vendite: ${formatEuro(summary.sales_cents)}. Vedi gli articoli venduti`,
+    }),
+    ledgerLine({
+      name: 'Spese Vinted', count: summary.expense_count,
+      amount: summary.expense_cents ? `− ${formatEuro(summary.expense_cents)}` : formatEuro(0),
+    }),
+  ];
+  if (summary.purchase_count && summary.extra_count) {
+    lines.push(ledgerLine({ name: 'di cui acquisti', amount: formatEuro(summary.purchase_cents), kind: 'is-detail' }));
+    lines.push(ledgerLine({ name: 'di cui extra', amount: formatEuro(summary.extra_cents), kind: 'is-detail' }));
+  }
+  if (summary.sales_count || summary.expense_count) {
+    lines.push(ledgerLine({
+      name: 'Differenza', amount: formatSignedEuro(summary.balance_cents).replace(/^([+−])/, '$1 '),
+      kind: `is-sum is-final ledger-diff ${signClass(summary.balance_cents)}`,
+    }));
+  }
+  return h('div', { class: 'card ledger', 'aria-label': `Vinted, ${monthLabel(month)}` }, lines);
+}
+
 export async function mount(root, ctx) {
   let month = monthFromQuery(ctx.query);
+  let windowEnd = month; // the newest of the six columns, as in the Riepilogo
+  let request = 0;
   const switcherSlot = h('div');
   const body = h('div');
   root.append(...vintedHead('summary', ctx.navigate), switcherSlot, body);
 
+  function placeWindow(next) {
+    if (next > windowEnd) windowEnd = next;
+    else if (next < shiftMonth(windowEnd, -(TREND_MONTHS - 1))) windowEnd = shiftMonth(next, TREND_MONTHS - 1);
+  }
+
   // quiet: see the same option in movements.js.
   async function show(nextMonth, { quiet = false } = {}) {
+    placeWindow(nextMonth);
     month = nextMonth;
+    const mine = ++request;
     history.replaceState(history.state, '', vintedSummaryPath(month));
     switcherSlot.replaceChildren(monthSwitcher(month, show));
     if (!quiet) body.replaceChildren(loadingBlock());
@@ -94,45 +95,18 @@ export async function mount(root, ctx) {
     try {
       [summary, trend] = await Promise.all([
         api.get(`/vinted/summary?month=${month}`),
-        api.get(`/vinted/summary/trend?month=${month}&months=${TREND_MONTHS}`),
+        api.get(`/vinted/summary/trend?month=${windowEnd}&months=${TREND_MONTHS}`),
       ]);
     } catch (error) {
-      if (!quiet && ctx.isCurrent() && month === nextMonth) body.replaceChildren(errorBlock(error, () => show(month)));
+      if (!quiet && ctx.isCurrent() && mine === request) body.replaceChildren(errorBlock(error, () => show(month)));
       return;
     }
-    if (!ctx.isCurrent() || month !== nextMonth) return; // a newer request took over
-
-    const parts = [
-      h('div', { class: 'receipt receipt-total' },
-        h('span', { class: 'receipt-label' }, `Vendite di ${monthLabel(month)}`),
-        h('span', { class: 'receipt-figure' }, ...euroParts(summary.sales_cents)),
-        h('span', { class: 'receipt-sub' },
-          summary.sales_count ? plural(summary.sales_count, 'vendita', 'vendite') : 'Nessuna vendita')),
-    ];
-    const rows = [row('Spese Vinted', spentMeta(summary), formatEuro(summary.expense_cents))];
-    if (summary.sales_count || summary.expense_count) {
-      rows.push(row('Differenza', 'Vendite meno spese del mese',
-        formatSignedEuro(summary.balance_cents), `balance-diff ${signClass(summary.balance_cents)}`));
-    }
-    parts.push(h('div', { class: 'card balance' }, rows));
-
-    parts.push(h('h2', { class: 'section-title' }, 'Articoli venduti'));
-    parts.push(h('div', { class: 'card balance balance-flush' }, summary.sold_count
-      ? row('Guadagno',
-        `${plural(summary.sold_count, 'articolo', 'articoli')}: incassati ${formatEuro(summary.sold_cents)}, pagati ${formatEuro(summary.sold_cost_cents)} per comprarli; le cose già vostre costano zero`,
-        formatSignedEuro(summary.gain_cents), `balance-diff ${signClass(summary.gain_cents)}`)
-      : row('Guadagno', 'Nessun articolo venduto nel mese', '–')));
-
-    // The chart is left out only when the six months are all empty; the
-    // link to "Esplora" stays.
-    const explore = explorePath('vinted', month);
-    if (trend.some((item) => item.income_count || item.expense_count)) {
-      parts.push(trendChart(trend, VINTED_TREND, { explore }));
-    } else {
-      parts.push(h('div', { class: 'card explore-card' }, exploreLink(explore)));
-    }
-    parts.push(...yearCard(summary));
-    body.replaceChildren(...parts);
+    if (!ctx.isCurrent() || mine !== request) return; // a newer request took over
+    body.replaceChildren(
+      monthLedger(summary, month),
+      monthBars(trend, month, (picked) => show(picked), explorePath('vinted', month),
+        { income: 'Vendite', expense: 'Spese' }),
+      ...yearCard(summary));
   }
 
   ctx.onResume(({ longAway }) => { if (longAway) show(month, { quiet: true }); });

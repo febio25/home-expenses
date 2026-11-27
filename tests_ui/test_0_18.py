@@ -42,7 +42,7 @@ def test_calendar_opens_a_past_month_on_its_last_day_with_expenses(phone, api, s
     expense(api, "7,70", "Bar", day(20))
     phone.goto(f"{server}/movimenti?mese={PAST_MONTH}")
     selected = phone.wait_for_selector(".cal-day.is-selected")
-    assert selected.inner_text().split() == ["20", "48"]  # 40 + 7,70, whole euros
+    assert plain(selected.inner_text()).split() == ["20", "48", "€"]  # 40 + 7,70, whole euros
     receipt = phone.locator(".cal-receipt")
     assert "Coop" in receipt.inner_text() and "Bar" in receipt.inner_text()
     assert "47,70" in plain(receipt.locator(".day-total").inner_text())
@@ -75,18 +75,18 @@ def test_lens_filters_and_tags(phone, api, server):
     assert not phone.eval_on_selector("#expense-search", "(node) => node === document.activeElement")
 
     # Who paid: from the sheet; the pill turns green with the name and ×.
-    phone.click(".pill:has-text('Chi')")
+    phone.click(".fpill:has-text('Chi')")
     phone.click(".dialog.is-sheet .dialog-option:has-text('Nastia')")
-    phone.wait_for_selector(".pill.is-active:has-text('Nastia')")
+    phone.wait_for_selector(".fpill.is-active:has-text('Nastia')")
     phone.wait_for_selector(".search-scope")
     assert "435,00" in plain(phone.locator(".month-total-amount").inner_text())
     assert "chi=" in phone.url
     phone.click("button[aria-label='Togli il filtro Chi']")
-    phone.wait_for_selector(".pill:has-text('Chi') .pill-caret")
+    phone.wait_for_selector(".fpill:has-text('Chi') .fpill-caret")
 
     # A tag under a row: every expense with it, in any spelling, with the total.
     phone.click(".tag-pill:has-text('#mare')")
-    phone.wait_for_selector(".pill.is-active:has-text('#mare')")
+    phone.wait_for_selector(".fpill.is-active:has-text('#mare')")
     phone.wait_for_selector(".search-scope")
     assert phone.locator(".roll .row").count() == 2
     assert "506,00" in plain(phone.locator(".month-total-amount").inner_text())

@@ -120,16 +120,20 @@ export function donut(summary, title, palette) {
 // shows no difference: minus the expenses would read as a deficit that is
 // not there.
 
-function signClass(cents) {
+export function signClass(cents) {
   if (cents > 0) return 'is-positive';
   return cents < 0 ? 'is-negative' : 'is-zero';
 }
 
 const plural = (count, one, many) => (count === 1 ? `1 ${one}` : `${count} ${many}`);
 
-function ledgerLine({ name, meta = null, amount, href = null, label = null, kind = '' }) {
+// count (0.18.1): on the line of the name, «Entrate (4)», as in «Quanto
+// costano», so the name and its figure can be larger. Exported for the
+// summary of the Vinted section.
+export function ledgerLine({ name, count = null, meta = null, amount, href = null, label = null, kind = '' }) {
   const main = h('span', { class: 'ledger-main' },
-    h('span', { class: 'ledger-name' }, name),
+    h('span', { class: 'ledger-name' }, name,
+      count === null ? null : h('span', { class: 'ledger-count' }, ` (${count})`)),
     meta ? h('span', { class: 'ledger-meta' }, meta) : null);
   const figure = h('span', { class: 'ledger-amount' }, amount);
   const className = `ledger-line ${kind}`.trim();
@@ -148,7 +152,7 @@ function ledgerCard(summary, month) {
 
   lines.push(ledgerLine({
     name: 'Entrate',
-    meta: hasIncome ? plural(summary.income_count, 'entrata', 'entrate') : 'Nessuna entrata registrata',
+    count: summary.income_count,
     amount: formatEuro(summary.income_cents),
     href: incomesPath(month),
     label: `Entrate: ${formatEuro(summary.income_cents)}. Vedi le entrate del mese`,
@@ -160,7 +164,7 @@ function ledgerCard(summary, month) {
   }
   lines.push(ledgerLine({
     name: 'Spese',
-    meta: summary.expense_count ? plural(summary.expense_count, 'spesa', 'spese') : 'Nessuna spesa',
+    count: summary.expense_count,
     amount: summary.total_cents ? `− ${formatEuro(summary.total_cents)}` : formatEuro(0),
     href: movementsPath(month),
     label: `Spese: ${formatEuro(summary.total_cents)}. Vedi le spese del mese`,
@@ -208,7 +212,9 @@ function ledgerCard(summary, month) {
 // six months moves only when the arrows go past its oldest or newest month.
 // Always drawn, even when the six months are empty.
 
-function monthBars(trend, month, onPick, explore) {
+// words (0.18.1): the names of the two columns; the Vinted section passes
+// «Vendite» and «Spese».
+export function monthBars(trend, month, onPick, explore, words = { income: 'Entrate', expense: 'Spese' }) {
   const largest = Math.max(1, ...trend.map((item) => Math.max(item.income_cents, item.expense_cents)));
   function bar(kind, cents) {
     const node = h('span', { class: `trend-bar is-${kind}` });
@@ -235,7 +241,7 @@ function monthBars(trend, month, onPick, explore) {
     const incomes = item.income_count ? formatEuro(item.income_cents) : 'nessuna';
     return h('button', {
       class: `trend-col${selected ? ' is-selected' : ''}`, type: 'button', 'aria-pressed': String(selected),
-      'aria-label': `${monthLabel(item.month)}: entrate ${incomes}, spese ${formatEuro(item.expense_cents)}. Mostra il mese`,
+      'aria-label': `${monthLabel(item.month)}: ${words.income.toLowerCase()} ${incomes}, ${words.expense.toLowerCase()} ${formatEuro(item.expense_cents)}. Mostra il mese`,
       onclick: () => { if (!selected) onPick(item.month); },
     },
     h('span', { class: 'trend-bars' }, incomeColumn(item), bar('expense', item.expense_cents)),
@@ -244,156 +250,18 @@ function monthBars(trend, month, onPick, explore) {
   const voucherKey = trend.some((item) => item.voucher_cents)
     ? h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-voucher' }), 'di cui buoni')
     : null;
-  return h('figure', { class: 'card trend trend-months', 'aria-label': `Entrate e spese di ${trend.length} mesi` },
+  return h('figure', { class: 'card trend trend-months', 'aria-label': `${words.income} e ${words.expense.toLowerCase()} di ${trend.length} mesi` },
     h('figcaption', { class: 'trend-legend' },
-      h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-income' }), 'Entrate'),
+      h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-income' }), words.income),
       voucherKey,
-      h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-expense' }), 'Spese')),
+      h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-expense' }), words.expense)),
     h('div', { class: 'trend-plot' }, columns),
     h('a', { class: 'trend-more', href: explore, dataset: { link: '' } }, 'Esplora ›'));
-}
-
-// --- last six months ----------------------------------------------------------
-//
-// Two thin columns per month, incomes and expenses, on one shared scale, with
-// the difference in whole euros under each month. The colours live in
-// app.css (palette slots 6 and 7, validated: the donut already uses 1-5 on
-// this screen). No value axis: the difference row carries the figures, and a
-// tap on a month (or keyboard focus) writes its exact totals under the chart.
-// The meal vouchers of a month sit on top of its income column, in a lighter
-// green, so the part at the baseline is the money received.
-
-const wholeEuros = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 0, useGrouping: 'always' });
-
-// "+1.795", "−150", "0"; from ten thousand up "+12,3k", to fit the column.
-function shortDifference(cents) {
-  const euros = Math.round(cents / 100);
-  if (!euros) return '0';
-  const sign = euros > 0 ? '+' : '−';
-  const size = Math.abs(euros);
-  const text = size >= 10000
-    ? `${new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1 }).format(size / 1000)}k`
-    : wholeEuros.format(size);
-  return `${sign}${text}`;
 }
 
 function shortMonth(month) {
   const [year, number] = month.split('-').map(Number);
   return new Date(year, number - 1, 1).toLocaleDateString('it-IT', { month: 'short' }).replace('.', '');
-}
-
-function describeIncomes(item, { none }) {
-  if (!item.income_count) return none;
-  const vouchers = item.voucher_cents ? `, di cui buoni pasto ${formatEuro(item.voucher_cents)}` : '';
-  return `${formatEuro(item.income_cents)}${vouchers}`;
-}
-
-// The words of the chart. The household one: incomes and expenses, and a
-// month without incomes shows no difference ("–"): minus the expenses would
-// look like a deficit that is not there. The Vinted section (0.8.0) passes
-// its own: sales and Vinted expenses, and a month with only purchases does
-// have a negative difference.
-export const HOUSEHOLD_TREND = {
-  title: 'Entrate e spese',
-  income: 'Entrate',
-  expense: 'Spese',
-  noIncome: 'Nessuna entrata',
-  incomeWord: 'entrate',
-  noIncomeAria: 'nessuna registrata',
-  note: 'Sotto ogni mese: entrate meno spese.',
-  hasDifference: (item) => item.income_count > 0,
-};
-
-function describeMonth(item, words) {
-  const incomes = describeIncomes(item, { none: words.noIncomeAria });
-  const difference = words.hasDifference(item) ? `, differenza ${formatSignedEuro(item.balance_cents)}` : '';
-  return `${monthLabel(item.month)}: ${words.incomeWord} ${incomes}, spese ${formatEuro(item.expense_cents)}${difference}`;
-}
-
-// explore: the address of "Esplora" (0.9.0), linked at the bottom of the card.
-export function trendChart(trend, words = HOUSEHOLD_TREND, { explore = null } = {}) {
-  const largest = Math.max(1, ...trend.map((item) => Math.max(item.income_cents, item.expense_cents)));
-  const readoutMonth = h('strong', { class: 'trend-readout-month' });
-  const readoutValues = h('span', { class: 'trend-readout-values' });
-  const readout = h('p', { class: 'trend-readout', 'aria-live': 'polite' }, readoutMonth, readoutValues);
-
-  function bar(kind, cents) {
-    const node = h('span', { class: `trend-bar is-${kind}` });
-    // Shared scale; a value too small to see still gets a sliver.
-    if (cents > 0) node.style.height = `max(2px, ${(cents / largest) * 100}%)`;
-    else node.classList.add('is-empty');
-    return node;
-  }
-
-  // Incomes: meal vouchers on top, the rest at the baseline, 2 px of card
-  // between the two. The parts share the column by flex-grow, so the gap
-  // never makes it taller than the scale says.
-  function incomeColumn(item) {
-    if (!item.voucher_cents) return bar('income', item.income_cents);
-    const stack = h('span', { class: 'trend-stack' });
-    stack.style.height = `max(5px, ${(item.income_cents / largest) * 100}%)`;
-    const part = (kind, cents) => {
-      const node = h('span', { class: `trend-bar is-${kind}` });
-      node.style.flex = `${cents} 1 0`;
-      return node;
-    };
-    stack.append(part('voucher', item.voucher_cents));
-    const money = item.income_cents - item.voucher_cents;
-    if (money > 0) stack.append(part('income', money));
-    return stack;
-  }
-
-  const columns = trend.map((item) => {
-    const difference = words.hasDifference(item)
-      ? h('span', { class: `trend-diff ${signClass(item.balance_cents)}` }, shortDifference(item.balance_cents))
-      : h('span', { class: 'trend-diff is-none' }, '–');
-    return h('button', {
-      class: 'trend-col', type: 'button', 'aria-pressed': 'false', 'aria-label': describeMonth(item, words),
-      onclick: () => select(item),
-      onfocus: () => select(item),
-    },
-    h('span', { class: 'trend-bars' }, incomeColumn(item), bar('expense', item.expense_cents)),
-    h('span', { class: 'trend-month' }, shortMonth(item.month)),
-    difference);
-  });
-
-  function select(item) {
-    trend.forEach((other, index) => {
-      columns[index].classList.toggle('is-selected', other === item);
-      columns[index].setAttribute('aria-pressed', String(other === item));
-    });
-    readoutMonth.textContent = monthLabel(item.month);
-    readoutValues.textContent = (item.income_count ? `${words.income} ${describeIncomes(item, {})}` : words.noIncome)
-      + ` · ${words.expense} ${formatEuro(item.expense_cents)}`;
-  }
-  select(trend[trend.length - 1]); // the month on screen
-
-  // The voucher key only when the six months have any.
-  const voucherKey = trend.some((item) => item.voucher_cents)
-    ? h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-voucher' }), 'di cui buoni')
-    : null;
-  return h('figure', { class: 'card trend', 'aria-label': `${words.title} degli ultimi ${trend.length} mesi` },
-    h('figcaption', { class: 'trend-head' },
-      h('span', { class: 'trend-title' }, `Ultimi ${trend.length} mesi`),
-      h('span', { class: 'trend-legend' },
-        h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-income' }), words.income),
-        voucherKey,
-        h('span', { class: 'trend-key' }, h('span', { class: 'trend-swatch is-expense' }), words.expense))),
-    h('div', { class: 'trend-plot' }, columns),
-    h('p', { class: 'trend-note' }, words.note),
-    readout,
-    explore ? exploreLink(explore) : null);
-}
-
-// "Esplora ›" (0.9.0): the totals of a month, a year, six months or two
-// dates. At the bottom of the chart card, or in a card of its own when the
-// chart is left out (six empty months).
-export function exploreLink(href) {
-  return h('a', { class: 'trend-explore', href, dataset: { link: '' } },
-    h('span', { class: 'trend-explore-main' },
-      h('span', { class: 'trend-explore-name' }, 'Esplora'),
-      h('span', { class: 'trend-explore-meta' }, 'Totali di un mese, un anno, 6 mesi o delle date che scegli')),
-    h('span', { class: 'bar-go', 'aria-hidden': 'true' }, '›'));
 }
 
 // Addresses of the summary screen; the month is left out when current.

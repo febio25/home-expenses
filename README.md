@@ -52,12 +52,23 @@ esposta su internet.
   scontrino, con la ricerca e i filtri; Indietro torna al calendario, e
   riaprendo Movimenti si parte sempre dal calendario. Le entrate restano
   una lista (busta paga).
+- Calendario dalla 0.18.1: numeri dei giorni più grandi e importi con «€»
+  («127 €»; dalle migliaia «1,2k €», «12k €», dal milione «1,2M €»). Ogni
+  giorno ha la sua casella, su una scala di quattro verdi: il più tenue per
+  i giorni senza spese, poi tre verdi sempre più pieni per le spese più
+  alte del mese (rispetto al giorno più caro fino a oggi). Il giorno scelto
+  è verde pieno. Le righe si completano con i giorni del mese prima e dopo,
+  in grigio tratteggiato: toccandone uno si passa a quel mese, su quel
+  giorno.
 - Lista dei movimenti per mese, con modifica ed eliminazione. Dalla 0.16.0
   il mese è uno scontrino: una striscia sola con il bordo strappato sopra e
   sotto, ogni giorno aperto dal suo nome in maiuscolo tra due tratteggi e
   chiuso dal suo «Subtotale» (sempre, anche con una sola spesa). Lo stesso
   scontrino si usa per le spese di una categoria e per i risultati della
-  ricerca, divisi per mese.
+  ricerca, divisi per mese. Dalla 0.18.1, nella lente e nei risultati della
+  ricerca, un giorno o un mese con una sola spesa si chiude senza
+  «Subtotale» e senza riga: l'importo sarebbe lo stesso. Il giorno scelto
+  nel calendario tiene il suo «Subtotale», come uno scontrino.
 - Ricerca nei movimenti (dalla 0.9.0): la barra sotto «Spese | Entrate» cerca
   in tutti i mesi, senza badare a maiuscole e accenti, in esercente, nota,
   categoria, importo («12,50») e titolo dell'articolo Vinted collegato (per
@@ -100,7 +111,9 @@ esposta su internet.
   Poi l'interruttore **Spese | Entrate** per ciambella e categorie: una
   categoria di spesa apre le sue spese; una categoria di entrata apre la
   busta paga del mese con le sue righe evidenziate (la × toglie l'evidenza).
-  La vecchia schermata *Riepilogo → Entrate* non c'è più.
+  La vecchia schermata *Riepilogo → Entrate* non c'è più. Dalla 0.18.1 il
+  numero dei movimenti è sulla stessa riga della voce, tra parentesi
+  («Entrate (4)», «Spese (35)»), con le voci e il totale finale più grandi.
 - *Esplora* (dalla 0.9.0), dal link sotto l'istogramma: i totali di un mese,
   di un anno, degli ultimi 6 mesi o di due date a scelta, con le frecce per
   andare avanti e indietro. Dalla 0.18.0 conta anche le spese previste dopo
@@ -135,9 +148,14 @@ esposta su internet.
   all'entrata della vendita (categoria di entrata *Vinted*), che restano
   normali movimenti e finiscono nei rispettivi CSV. Il guadagno è vendita
   meno acquisto; per le cose già di casa, l'intera vendita. In *Vinted →
-  Riepilogo*: vendite, spese Vinted e differenza del mese, guadagno sugli
-  articoli venduti, istogramma degli ultimi 6 mesi e conteggio dell'anno
-  rispetto alle soglie DAC7 (indicativo). Gli acquisti personali fatti su
+  Riepilogo*, rivisto nella 0.18.1 come il Riepilogo di casa: il bilancio
+  del mese in un riquadro (Vendite e Spese Vinted con il numero tra
+  parentesi, «di cui acquisti» e «di cui extra» quando ci sono entrambi,
+  Differenza con la doppia sottolineatura; toccando Vendite si aprono gli
+  articoli venduti), l'istogramma degli ultimi 6 mesi (toccando un mese
+  tutta la pagina passa a quel mese) con il link a *Esplora*, dove c'è il
+  guadagno sugli articoli venduti in un mese, un anno, 6 mesi o due date a
+  scelta, e il conteggio dell'anno rispetto alle soglie DAC7 (indicativo). Gli acquisti personali fatti su
   Vinted restano spese della loro categoria (Abbigliamento, Casa e utenze…);
   i costi extra (buste, spedizioni) sono spese *Vinted* senza articolo.
 - *Vinted*, dalla 0.10.0: un articolo nuovo resta **da pubblicare** finché
@@ -146,7 +164,9 @@ esposta su internet.
   giorno. In cima alla lista quattro filtri a icona con il numero: da
   pubblicare (clessidra, dalla 0.16.0), in vendita (negozio), venduti
   (moneta), tutti (pila, ritirati compresi). La ricerca guarda tutti gli
-  articoli.
+  articoli. Dalla 0.18.1 la barra di ricerca compare solo quando serve: la
+  **lente** in alto, accanto al nome, la apre sotto «Articoli | Riepilogo»;
+  la lente di nuovo, o la ×, la svuota e la chiude.
 - Scheda dell'articolo (dalla 0.16.0): accanto alla foto, alti quanto lei,
   il titolo (fino a quattro righe, poi «…»; toccandolo si rinomina) e i
   prezzi (prezzo su Vinted e pagato; da venduto, prezzo di vendita e
@@ -503,6 +523,10 @@ dell'acquisto, o il giorno in cui erano stati aggiunti); se un articolo non
 era ancora su Vinted, dalla sua scheda *Su Vinted → Modifica → Non ancora
 pubblicato*, oppure correggi la data. Foto, acquisti e vendite non cambiano.
 Gli articoli nuovi partono *Da pubblicare*.
+
+Dalla 0.18.0 alla 0.18.1 il database non cambia (schema 10, invariato):
+cambiano solo l'aspetto di calendario, scontrini, Riepilogo e Vinted.
+Tornare alla 0.18.0 resta possibile, anche con un backup fatto dalla 0.18.1.
 
 Dalla 0.17.0 alla 0.18.0 il database non cambia (schema 10, invariato):
 cambiano Movimenti (calendario, lente, filtri, etichette), Riepilogo ed
@@ -1011,6 +1035,9 @@ CDN.
     `total_cents`, `last_date`), dalla usata più di recente.
   - `GET /api/v1/summary/period` ha anche `planned_cents` e `planned_count`:
     la parte delle spese del periodo con data dopo oggi.
+- Dalla 0.18.1: `GET /api/v1/vinted/summary` ha anche `purchase_cents` e
+  `extra_cents`, gli importi delle spese Vinted del mese divisi tra acquisti
+  di articoli e costi extra (accanto a `purchase_count` ed `extra_count`).
 
 ## Sviluppo
 

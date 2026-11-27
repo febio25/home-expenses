@@ -78,10 +78,12 @@ export function icon(name) {
 // who is signed in and the settings, which left the bottom bar to make room
 // for Vinted. An icon without text, but a full-size tap target and a name
 // for screen readers.
-export function mainHead(title, name) {
+// tool: an optional button before the name (0.18.1: the lens of Vinted).
+export function mainHead(title, name, tool = null) {
   return h('header', { class: 'page-head has-tools' },
     h('h1', { class: 'page-title' }, title),
     h('div', { class: 'page-tools' },
+      tool,
       name ? h('span', { class: 'page-who' }, name) : null,
       h('a', {
         class: 'page-gear', href: '/impostazioni', 'aria-label': 'Impostazioni', dataset: { link: '' },

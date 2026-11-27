@@ -38,7 +38,7 @@ export function itemPath(id) {
 }
 
 // Title, who is signed in, settings, and the switch between the two views.
-export function vintedHead(active, navigate) {
+export function vintedHead(active, navigate, tool = null) {
   const link = (id, label, path) => h('a', {
     class: `seg-item${id === active ? ' is-selected' : ''}`,
     href: path,
@@ -49,7 +49,7 @@ export function vintedHead(active, navigate) {
     },
   }, label);
   return [
-    mainHead('Vinted', state.me.display_name),
+    mainHead('Vinted', state.me.display_name, tool),
     h('nav', { class: 'seg seg-links', 'aria-label': 'Articoli o riepilogo' },
       link('items', 'Articoli', '/vinted'),
       link('summary', 'Riepilogo', '/vinted/riepilogo')),
@@ -224,11 +224,39 @@ export async function mount(root, ctx) {
   });
   searchInput.setAttribute('autocorrect', 'off');
   const pills = h('div', { class: 'pills pills-icons', role: 'group', 'aria-label': 'Quali articoli' });
+  // 0.18.1: the search box only when needed. The lens in the head of the
+  // page, beside the name, opens it under the tabs with the cursor inside;
+  // the lens again, or the ×, empties it and closes it. The filters keep
+  // their row to themselves, even at 320 px.
+  function closeSearch() {
+    searchInput.value = '';
+    search = '';
+    searchBar.hidden = true;
+    lens.classList.remove('is-open');
+    lens.setAttribute('aria-expanded', 'false');
+    draw();
+  }
+  const searchBar = h('div', { class: 'search search-movements has-text vinted-search', hidden: true }, icon('search'),
+    h('label', { class: 'visually-hidden', for: 'vinted-search' }, 'Cerca un articolo'), searchInput,
+    h('button', {
+      class: 'search-clear', type: 'button', 'aria-label': 'Chiudi la ricerca',
+      onclick: () => { closeSearch(); lens.focus(); },
+    }, icon('close')));
+  const lens = h('button', {
+    class: 'page-gear vinted-lens', type: 'button', 'aria-label': 'Cerca un articolo',
+    'aria-controls': 'vinted-search', 'aria-expanded': 'false',
+    onclick: () => {
+      if (!searchBar.hidden) { closeSearch(); return; }
+      searchBar.hidden = false;
+      lens.classList.add('is-open');
+      lens.setAttribute('aria-expanded', 'true');
+      searchInput.focus();
+    },
+  }, icon('search'));
   const body = h('div');
   root.append(
-    ...vintedHead('items', ctx.navigate),
-    h('div', { class: 'search' }, icon('search'),
-      h('label', { class: 'visually-hidden', for: 'vinted-search' }, 'Cerca un articolo'), searchInput),
+    ...vintedHead('items', ctx.navigate, lens),
+    searchBar,
     pills,
     body,
     h('div', { class: 'footer-bar' },

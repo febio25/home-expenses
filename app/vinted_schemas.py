@@ -280,6 +280,8 @@ class VintedSummaryOut(BaseModel):
     expense_count: int
     purchase_count: int = Field(description="Of those, the purchases of an item")
     extra_count: int = Field(description="Of those, the ones without an item: supplies, promotions")
+    purchase_cents: int = Field(0, description="0.18.1: total of the purchases of an item")
+    extra_cents: int = Field(0, description="0.18.1: total of the extras")
     balance_cents: int = Field(description="sales_cents - expense_cents; may be negative")
     sold_count: int = Field(description="Items whose sale falls in the month")
     sold_cents: int

@@ -1180,22 +1180,22 @@ a.ledger-line:active { background: var(--primary-soft); }
 .cal-empty { margin-top: 12px; padding: 18px 16px; }
 
 /* filters of the search: pills under «Cerca nelle spese», in one row that scrolls */
-.pills {
+.filters {
   display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
   margin: -4px calc(-1 * var(--gap)) 12px; padding: 0 var(--gap) 2px;
 }
-.pills::-webkit-scrollbar { display: none; }
-.pill {
+.filters::-webkit-scrollbar { display: none; }
+.fpill {
   flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 12px;
   border: 1.5px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink);
   font-size: 0.875rem; font-weight: 500; white-space: nowrap;
 }
-.pill-caret { color: var(--muted); font-size: 0.75rem; }
-.pill.is-active { padding: 0; gap: 0; background: var(--primary); border-color: var(--primary); color: #fff; }
-.pill-main, .pill-clear { border: 0; background: transparent; color: inherit; font: inherit; min-height: 36px; }
-.pill-main { padding: 4px 4px 4px 12px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
-.pill-clear { display: grid; place-items: center; width: 34px; padding: 0 6px 0 0; }
-.pill-clear svg { width: 16px; height: 16px; }
+.fpill-caret { color: var(--muted); font-size: 0.75rem; }
+.fpill.is-active { padding: 0; gap: 0; background: var(--primary); border-color: var(--primary); color: #fff; }
+.fpill-main, .fpill-clear { border: 0; background: transparent; color: inherit; font: inherit; min-height: 36px; }
+.fpill-main { padding: 4px 4px 4px 12px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+.fpill-clear { display: grid; place-items: center; width: 34px; padding: 0 6px 0 0; }
+.fpill-clear svg { width: 16px; height: 16px; }
 
 /* tags of the note under a row: links of their own over the row's bottom edge */
 .row-wrap { position: relative; }
@@ -1220,3 +1220,37 @@ a.ledger-line:active { background: var(--primary-soft); }
 
 /* tags typed in the note: the ones already used, as chips */
 .tag-chips { margin-top: 6px; }
+
+/* --- 0.18.1 ------------------------------------------------------------------------- */
+
+/* the ledger: the count on the name's line, names and figures larger */
+.ledger-name { font-size: 1.0625rem; }
+.ledger-count { color: var(--muted); font-weight: 400; }
+.ledger-amount { font-size: 1.0625rem; }
+.ledger-line.is-detail .ledger-name, .ledger-line.is-detail .ledger-amount { font-size: 0.875rem; }
+.ledger-line.is-final .ledger-amount { font-size: 1.375rem; }
+
+/* the calendar: larger numbers, every day in a tile of its own on a scale
+   of four greens (the palest for the days of the month without expenses,
+   then three steps for the days that cost more), the days of the months
+   around in grey shaded with diagonal lines, so the two read apart at a
+   glance */
+.cal-grid { gap: 3px; }
+.cal-day { min-height: 54px; padding-top: 7px; background: #EEF6F1; border-radius: 8px; }
+.cal-num { font-size: 1.0625rem; }
+.cal-sum { font-size: 0.6875rem; white-space: nowrap; }
+.cal-day.is-other { background: repeating-linear-gradient(135deg, #E6EAE8 0 4px, #D6DCD9 4px 6px); }
+.cal-day.is-other .cal-num { color: #9AA6A0; font-weight: 400; }
+.cal-day.is-other:disabled { opacity: 1; }
+.cal-day.heat-1 { background: #D9EDE1; }
+.cal-day.heat-2 { background: #BDE0CB; }
+.cal-day.heat-3 { background: #9BCFB1; }
+.cal-day.heat-1 .cal-sum, .cal-day.heat-2 .cal-sum, .cal-day.heat-3 .cal-sum { color: var(--primary-press); }
+.cal-day.is-selected { background: var(--primary); }
+.cal-day.is-selected .cal-num, .cal-day.is-selected .cal-sum { color: #fff; }
+
+/* Vinted: the lens in the head of the page; the search box under the tabs,
+   only when opened */
+.vinted-lens { border: 0; background: none; cursor: pointer; }
+.vinted-lens.is-open { background: var(--primary-soft); color: var(--primary); }
+.vinted-search { margin: 12px 0 0; }

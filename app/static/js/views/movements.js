@@ -126,17 +126,21 @@ export function listTotal(cents, countText) {
 // like a department on a till receipt, and closes with its «Subtotale», even
 // with a single row: the same place every time. No line between the rows of
 // a section. sections: [{ title, items, note }], rows drawn by row.
+// 0.18.1: in the lens and the search, a section of a single row (single:
+// true) closes with nothing: no «Subtotale» repeating its amount, no dotted
+// line. The day picked on the calendar keeps its «Subtotale» even then.
 function receipt(sections, row) {
   const sum = (list) => list.reduce((total, item) => total + item.amount_cents, 0);
-  return h('div', { class: 'roll' }, sections.map(({ title, items, cents = null, note = null }) => {
+  return h('div', { class: 'roll' }, sections.map(({ title, items, cents = null, note = null, single = null }) => {
     const rows = h('div', { class: 'rows' }, items.map(row));
-    const subtotal = h('span', { class: 'day-total' }, formatEuro(cents ?? sum(items)));
     const section = h('section', { class: 'day' },
       h('h2', { class: 'day-head' }, h('span', {}, title)),
       rows,
-      h('p', { class: 'day-sub' },
-        h('span', {}, note ? `Subtotale · ${note}` : 'Subtotale'),
-        subtotal));
+      single
+        ? null
+        : h('p', { class: 'day-sub' },
+          h('span', {}, note ? `Subtotale · ${note}` : 'Subtotale'),
+          h('span', { class: 'day-total' }, formatEuro(cents ?? sum(items)))));
     section.rows = rows; // the search adds the rows of a later page here
     return section;
   }));
@@ -148,7 +152,9 @@ function receipt(sections, row) {
 // and the search results; the incomes have a sheet of their own (0.16.0,
 // payslip() in incomes.js).
 // showTotal: false where the screen already shows the total above.
-export function dayList(items, { dateOf, row, count, showTotal = true }) {
+// lone: true (the lens, 0.18.1) closes a day of one row with nothing; the
+// day picked on the calendar keeps its «Subtotale», like a receipt.
+export function dayList(items, { dateOf, row, count, showTotal = true, lone = false }) {
   const groups = new Map(); // date -> items, insertion order = newest day first
   for (const item of items) {
     const date = dateOf(item);
@@ -158,7 +164,7 @@ export function dayList(items, { dateOf, row, count, showTotal = true }) {
   const total = items.reduce((sum, item) => sum + item.amount_cents, 0);
   return [
     ...(showTotal ? [listTotal(total, count(items.length))] : []), // spread into replaceChildren: no nulls
-    receipt(Array.from(groups, ([date, dayItems]) => ({ title: dayLabel(date), items: dayItems })), row),
+    receipt(Array.from(groups, ([date, dayItems]) => ({ title: dayLabel(date), items: dayItems, single: lone && dayItems.length === 1 })), row),
   ];
 }
 
@@ -255,7 +261,7 @@ export function searchResults({ items, totals }, {
       if (!sections.has(month)) {
         const info = monthTotals.get(month) || { count: 0, total_cents: 0 };
         const [section] = receipt([{
-          title: monthLabel(month), items: [], cents: info.total_cents, note: count(info.count),
+          title: monthLabel(month), items: [], cents: info.total_cents, note: count(info.count), single: info.count === 1,
         }], row).children;
         list.append(section);
         sections.set(month, section.rows);
@@ -330,23 +336,52 @@ export function startDay(month, expenses) {
   return expenses.length ? expenses[0].expense_date : isoOf(month, 1);
 }
 
-// Monday-first grid; each day shows its total in whole euros (planned
-// days after today in grey), today is underlined, the day picked is
-// filled. A tap picks a day.
-function calendar(month, totals, selected, onPick) {
+// «127 €», «1,2k €», «12k €»: the total under a day, in whole euros, short
+// enough for a cell of a 320 px screen (0.18.1). The exact amount is in the
+// receipt below and in what a screen reader says.
+export function dayAmount(cents) {
+  const euros = Math.round(cents / 100);
+  if (euros < 1000) return `${wholeEuros.format(euros)} €`;
+  if (euros < 10000) return `${(Math.round(euros / 100) / 10).toLocaleString('it-IT')}k €`;
+  if (euros < 1000000) return `${Math.round(euros / 1000)}k €`;
+  return `${(Math.round(euros / 100000) / 10).toLocaleString('it-IT')}M €`;
+}
+
+// Monday-first grid; each day shows its total (planned days after today in
+// grey), today is underlined, the day picked is filled. 0.18.1: the days
+// of the months around fill the first and last week, in light grey and
+// without totals: a tap goes to that month. The more a day cost compared
+// with the others of the month, the deeper its green, so the heavy days
+// stand out.
+function calendar(month, totals, selected, onPick, onOtherMonth) {
   const today = todayIso();
   const [year, number] = month.split('-').map(Number);
-  const lead = (new Date(year, number - 1, 1).getDay() + 6) % 7; // blanks before the 1st
+  const lead = (new Date(year, number - 1, 1).getDay() + 6) % 7; // days of the month before
+  const length = daysIn(month);
+  const trail = (7 - ((lead + length) % 7)) % 7; // days of the month after
+  const largest = Math.max(0, ...[...totals].filter(([iso]) => iso <= today).map(([, info]) => info.cents));
   const cells = [];
-  for (let blank = 0; blank < lead; blank += 1) cells.push(h('span', { class: 'cal-blank', 'aria-hidden': 'true' }));
-  for (let day = 1; day <= daysIn(month); day += 1) {
+  const other = (iso) => {
+    const reachable = iso >= '2000-01-01' && iso.slice(0, 7) <= latestPlannedMonth();
+    return h('button', {
+      class: 'cal-day is-other', type: 'button', disabled: !reachable, tabindex: '-1',
+      'aria-label': `${dayLabel(iso)}: vai a ${monthLabel(iso.slice(0, 7))}`,
+      onclick: () => onOtherMonth(iso),
+    }, h('span', { class: 'cal-num' }, String(Number(iso.slice(8, 10)))), h('span', { class: 'cal-sum' }, ''));
+  };
+  const before = shiftMonth(month, -1);
+  for (let index = lead; index > 0; index -= 1) cells.push(other(isoOf(before, daysIn(before) - index + 1)));
+  for (let day = 1; day <= length; day += 1) {
     const iso = isoOf(month, day);
     const info = totals.get(iso);
     const classes = ['cal-day'];
     if (iso === selected) classes.push('is-selected');
     if (iso === today) classes.push('is-today');
     if (iso > today) classes.push('is-future');
-    if (info) classes.push('has-spend');
+    if (info && iso <= today && largest > 0) {
+      const share = info.cents / largest;
+      classes.push(share > 0.66 ? 'heat-3' : share > 0.33 ? 'heat-2' : 'heat-1');
+    }
     const words = info
       ? `${formatEuro(info.cents)}, ${countExpenses(info.count)}${iso > today ? ' previste' : ''}`
       : 'nessuna spesa';
@@ -356,8 +391,10 @@ function calendar(month, totals, selected, onPick) {
       onclick: () => onPick(iso),
     },
     h('span', { class: 'cal-num' }, String(day)),
-    h('span', { class: 'cal-sum' }, info ? wholeEuros.format(Math.round(info.cents / 100)) : '')));
+    h('span', { class: 'cal-sum' }, info ? dayAmount(info.cents) : '')));
   }
+  const after = shiftMonth(month, 1);
+  for (let day = 1; day <= trail; day += 1) cells.push(other(isoOf(after, day)));
   return h('div', { class: 'cal', role: 'group', 'aria-label': `Calendario di ${monthLabel(month)}` },
     h('div', { class: 'cal-head', 'aria-hidden': 'true' }, WEEKDAYS.map((name) => h('span', {}, name))),
     h('div', { class: 'cal-grid' }, cells));
@@ -457,6 +494,7 @@ export async function mount(root, ctx) {
   let day = askedDay && DAY_SHAPE.test(askedDay) && askedDay.slice(0, 7) === month ? askedDay : null;
   let request = 0; // the latest load wins
   let monthItems = null; // the expenses of the month on screen
+  let landingDay = null; // 0.18.1: the day tapped in the month before or after
   let lookups = null; // users, categories and tags, for the filters
 
   const head = mainHead('Movimenti', state.me.display_name);
@@ -559,19 +597,19 @@ export async function mount(root, ctx) {
 
   function pills() {
     const names = { categoria: 'Categoria', chi: 'Chi', metodo: 'Metodo', periodo: 'Periodo', etichetta: 'Etichetta' };
-    return h('div', { class: 'pills', role: 'group', 'aria-label': 'Filtri' }, FILTER_KEYS.map((key) => {
+    return h('div', { class: 'filters', role: 'group', 'aria-label': 'Filtri' }, FILTER_KEYS.map((key) => {
       const value = filterValueLabel(key);
       if (!value) {
-        return h('button', { class: 'pill', type: 'button', onclick: () => chooseFilter(key) },
-          names[key], h('span', { class: 'pill-caret', 'aria-hidden': 'true' }, '▾'));
+        return h('button', { class: 'fpill', type: 'button', onclick: () => chooseFilter(key) },
+          names[key], h('span', { class: 'fpill-caret', 'aria-hidden': 'true' }, '▾'));
       }
-      return h('span', { class: 'pill is-active' },
+      return h('span', { class: 'fpill is-active' },
         h('button', {
-          class: 'pill-main', type: 'button', 'aria-label': `${names[key]}: ${value}. Cambia`,
+          class: 'fpill-main', type: 'button', 'aria-label': `${names[key]}: ${value}. Cambia`,
           onclick: () => chooseFilter(key),
         }, value),
         h('button', {
-          class: 'pill-clear', type: 'button', 'aria-label': `Togli il filtro ${names[key]}`,
+          class: 'fpill-clear', type: 'button', 'aria-label': `Togli il filtro ${names[key]}`,
           onclick: () => {
             const next = { ...filters };
             delete next[key];
@@ -679,11 +717,13 @@ export async function mount(root, ctx) {
           row: (expense) => expenseRow(expense),
           count: countExpenses,
           showTotal: false,
+          lone: true,
         })
         : [h('div', { class: 'empty' }, h('p', { class: 'empty-title' }, `Nessuna spesa a ${monthLabel(month)}`))]));
       return;
     }
-    if (!day) day = startDay(month, expenses);
+    if (!day) day = landingDay && landingDay.slice(0, 7) === month ? landingDay : startDay(month, expenses);
+    landingDay = null;
     history.replaceState(history.state, '', addressOf());
     const totals = new Map();
     for (const expense of expenses) {
@@ -696,14 +736,17 @@ export async function mount(root, ctx) {
     const pick = (iso) => {
       day = iso;
       history.replaceState(history.state, '', addressOf());
-      grid.querySelectorAll('.cal-day').forEach((cell, index) => {
+      grid.querySelectorAll('.cal-day:not(.is-other)').forEach((cell, index) => {
         const selected = isoOf(month, index + 1) === iso;
         cell.classList.toggle('is-selected', selected);
         cell.setAttribute('aria-pressed', String(selected));
       });
       receiptSlot.replaceChildren(dayReceipt(iso, expenses.filter((expense) => expense.expense_date === iso)));
     };
-    const grid = calendar(month, totals, day, pick);
+    const grid = calendar(month, totals, day, pick, (iso) => {
+      landingDay = iso;
+      show(iso.slice(0, 7));
+    });
     receiptSlot.replaceChildren(dayReceipt(day, expenses.filter((expense) => expense.expense_date === day)));
     body.replaceChildren(grid, receiptSlot);
   }

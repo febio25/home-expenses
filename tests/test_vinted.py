@@ -491,6 +491,7 @@ def test_summary_of_the_month(client, categories):
         "month": "2026-11",
         "sales_cents": 4900, "sales_count": 3,
         "expense_cents": 3500, "expense_count": 3, "purchase_count": 2, "extra_count": 1,
+        "purchase_cents": 3050, "extra_cents": 450,
         "balance_cents": 1400,
         "sold_count": 3, "sold_cents": 4900, "sold_cost_cents": 1600, "gain_cents": 3300,
         "year": 2026, "year_sales_count": 4, "year_sales_cents": 7900,

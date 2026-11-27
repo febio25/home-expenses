@@ -201,7 +201,7 @@ def test_main_screens_fit_the_phone_without_errors(browser, server, api, size):
             page.wait_for_timeout(300)
             wider = page.evaluate(
                 "() => [...document.querySelectorAll('#view *')]"
-                ".filter((node) => !node.closest('.chips-scroll, .pills'))"
+                ".filter((node) => !node.closest('.chips-scroll, .filters'))"
                 ".filter((node) => node.getBoundingClientRect().right > window.innerWidth + 1)"
                 ".map((node) => node.className || node.tagName)")
             assert wider == [], f"{route} at {size} px: {wider}"
